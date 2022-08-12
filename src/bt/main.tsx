@@ -4,6 +4,11 @@ import "./main.scss"
 
 
 
+const SCALE_MAX = 5;
+const SCALE_FACTOR = 0.005;
+
+
+
 interface Point {
   x: number;
   y: number;
@@ -26,15 +31,14 @@ class MapView {
 
   // transform
   scale = 1
-  tx = 0
-  ty = 0
-
-  abc = 0.005;
+  ox = 0
+  oy = 0
 
   // state
   drag_prev : Point|null = null;
 
   // debug
+  paused = false;
   fps = false;
   fps_tms : number[] = [];
 
@@ -68,10 +72,6 @@ export function BtMain() {
 
   return (<div className="bt-root">
     <button onClick={() => set_show(!show)}>Click Me</button>
-    <button onClick={() => { game.view.tx += 10; }}> left </button>
-    <button onClick={() => { game.view.tx -= 10; }}> right </button>
-    <button onClick={() => { game.view.ty -= 10; }}> up </button>
-    <button onClick={() => { game.view.ty += 10; }}> down </button>
     <br/>
     {show ? (<BtCanvas />) : null}
   </div>)
@@ -109,11 +109,7 @@ function BtCanvas() {
 
   useAnimate((tm:number) => {
     const view = game.view;
-
-    // enforce limits
-    view.scale = in_range(view.scale, .1, 5);
-    view.ty = in_range(view.ty, -1000, 0);
-    view.tx = in_range(view.tx, -1000, 0);
+    if (view.paused)  return;
 
     // clear the canvas
     const canvas = canvasRef.current;
@@ -122,14 +118,25 @@ function BtCanvas() {
     ctx.setTransform(1,0,0,1,0,0);
     ctx.clearRect(0,0,canvas.width, canvas.height);
 
-    // setup the transform
-    ctx.setTransform(view.scale,0,0,view.scale,view.tx,view.ty);
-
-    // draw hex grid
+    // get the edges
     const r = view.hex_radius;
     const sin = [0,1,2,3,4,5].map(n => r*Math.sin(2 * n * (Math.PI/6)));
     const cos = [0,1,2,3,4,5].map(n => r*Math.cos(2 * n * (Math.PI/6)));
-    drawHexGrid(0,0, view.hex_width, view.hex_height);
+    const mx = Math.ceil(2*r + (r+cos[1]) * (view.hex_width-1));
+    const my = Math.ceil(sin[1]*(2*view.hex_height+1));
+    const edge = point(mx,my);
+    const min_scale = Math.max(canvas.width/edge.x, canvas.height/edge.y);
+
+    // enforce limits
+    const scale = view.scale = in_range(view.scale, min_scale, SCALE_MAX);
+    view.ox = in_range(view.ox, 0, edge.x - canvas.width/scale);
+    view.oy = in_range(view.oy, 0, edge.y - canvas.height/scale);
+
+    // setup the transform
+    ctx.setTransform(view.scale,0,0, view.scale, -view.ox * view.scale, -view.oy * view.scale);
+
+    // draw hex grid
+    drawHexGrid(view.hex_width, view.hex_height);
 
     // draw the FPS in the top corner
     if (view.fps) {
@@ -167,7 +174,10 @@ function BtCanvas() {
       }
     }
 
-    function drawHexGrid(x:number, y:number, xn:number, yn:number) {
+    function drawHexGrid(xn:number, yn:number) {
+      var x = r;
+      var y = sin[1];
+
       ctx.strokeStyle = '#ccc';
       for (var i=0; i<xn; i++) {
         drawHexColumn(x,y,yn);
@@ -185,8 +195,8 @@ function BtCanvas() {
 
     // dragging the view
     if (view.drag_prev) {
-      view.tx += e.clientX - view.drag_prev.x;
-      view.ty += e.clientY - view.drag_prev.y;
+      view.ox -= (e.clientX - view.drag_prev.x) / view.scale;
+      view.oy -= (e.clientY - view.drag_prev.y) / view.scale;
       view.drag_prev = point(e.clientX, e.clientY);
     }
   }
@@ -200,8 +210,17 @@ function BtCanvas() {
   }
 
   function onWheel(e:react.WheelEvent) {
-    view.scale -= e.deltaY * view.abc;
-    console.log(e.deltaY, view.scale);
+    const S = view.scale;
+    view.scale -= e.deltaY * SCALE_FACTOR;
+    view.scale = in_range(view.scale, 0.1, SCALE_MAX);
+    const dS = view.scale - S;
+
+    const brect = canvasRef.current.getBoundingClientRect();
+    const vx = e.clientX - brect.x;
+    const vy = e.clientY - brect.y;
+
+    view.ox += ((dS/S) * vx) / (S+dS);
+    view.oy += ((dS/S) * vy) / (S+dS);
   }
 
 
