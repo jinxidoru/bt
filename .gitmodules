@@ -1,0 +1,4 @@
+[submodule "megamek"]
+	path = megamek
+	url = git@github.com:MegaMek/megamek.git
+
