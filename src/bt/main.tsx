@@ -1,11 +1,18 @@
 import {useState,useRef,useEffect,MouseEvent} from 'react'
 import react from 'react'
+import * as btutil from './btutil'
 import "./main.scss"
-
 
 
 const SCALE_MAX = 5;
 const SCALE_FACTOR = 0.005;
+const TAU = Math.PI * 2;
+
+const TEAM_COLORS:[number,number,number][] = [
+  [0,96,255],     // blue
+  [238,75,43],    // red
+  [0xff,0xb3,0],  // orange
+];
 
 
 
@@ -26,8 +33,7 @@ class MapView {
   // size
   hex_width = 40;
   hex_height = 40;
-  hex_radius = 20;
-
+  hex_radius = 32;
 
   // transform
   scale = 1
@@ -43,15 +49,54 @@ class MapView {
   fps_tms : number[] = [];
 
 
+  // private
+  private _trig_r = -1;
+  private _trig : [number[],number[]] = [[],[]];
+
+
   // --- methods
+  trig() {
+    if (this._trig_r !== this.hex_radius) {
+      const r = this._trig_r = this.hex_radius;
+      const a = TAU/6;
+      this._trig = [
+        [0,1,2,3,4,5].map(n => r*Math.sin(n*a)),
+        [0,1,2,3,4,5].map(n => r*Math.cos(n*a)),
+      ];
+    }
+    return this._trig;
+  }
+
+  hex_center(p:Point) {
+    const r = this.hex_radius;
+    const [sin,cos] = this.trig();
+    const x = (r + (r+cos[1]) * p.x);
+    const y = (sin[1] * (2*p.y+1)) + ((p.x%2) ? sin[1] : 0);
+    return point(x,y);
+  }
 
 };
 
 
+class Mech {
+  image: any;
+  position = point(-1,-1);
+  team_color = 'blue';
+  facing = 1;
+
+  constructor(x:number, y:number, img_url:string, team:number) {
+    this.position = point(x,y);
+
+    btutil.load_mech_image(img_url, TEAM_COLORS[team]).then(img => {
+      this.image = img;
+    });
+  }
+}
+
+
 class GameState {
   view = new MapView();
-
-
+  mechs:Mech[] = [];
 };
 
 
@@ -66,15 +111,19 @@ anyWindow.view = view;
 
 
 
+game.mechs.push(new Mech(0,0,'Daimyo',0));
+game.mechs.push(new Mech(0,1,'Wolverine',1));
+game.mechs.push(new Mech(2,3,'ZeusX_X3',2));
+game.mechs.push(new Mech(1,6,'jabberwocky_65a',1));
+game.mechs[0].facing = 2;
+
+for (var i=0; i<game.mechs.length; i++) {
+  game.mechs[i].facing = i%6;
+}
+
 
 export function BtMain() {
-  const [show,set_show] = useState(true);
-
-  return (<div className="bt-root">
-    <button onClick={() => set_show(!show)}>Click Me</button>
-    <br/>
-    {show ? (<BtCanvas />) : null}
-  </div>)
+  return (<div className="bt-root"><BtCanvas /></div>);
 }
 
 
@@ -103,6 +152,17 @@ function in_range(v:number, min:number, max:number) {
 }
 
 
+function with_rotation(ctx:any, x:number, y:number, a:number, fn:any) {
+  const saved = ctx.getTransform();
+  const sin = Math.sin;
+  const cos = Math.cos;
+  ctx.transform(cos(a),sin(a),-sin(a),cos(a),x-x*cos(a)+y*sin(a),y-x*sin(a)-y*cos(a));
+  fn();
+  ctx.setTransform(saved);
+}
+
+
+
 
 function BtCanvas() {
   const canvasRef = useRef<any>()
@@ -111,17 +171,21 @@ function BtCanvas() {
     const view = game.view;
     if (view.paused)  return;
 
-    // clear the canvas
+    // resize the canvas
     const canvas = canvasRef.current;
     if (!canvas || !canvas.getContext)  return;
+    const prect = canvas.parentNode.getBoundingClientRect()
+    canvas.width = prect.width + 8;
+    canvas.height = prect.height + 8;
+
+    // clear the canvas
     const ctx = canvas.getContext("2d");
     ctx.setTransform(1,0,0,1,0,0);
     ctx.clearRect(0,0,canvas.width, canvas.height);
 
     // get the edges
+    const [sin,cos] = view.trig();
     const r = view.hex_radius;
-    const sin = [0,1,2,3,4,5].map(n => r*Math.sin(2 * n * (Math.PI/6)));
-    const cos = [0,1,2,3,4,5].map(n => r*Math.cos(2 * n * (Math.PI/6)));
     const mx = Math.ceil(2*r + (r+cos[1]) * (view.hex_width-1));
     const my = Math.ceil(sin[1]*(2*view.hex_height+1));
     const edge = point(mx,my);
@@ -133,10 +197,26 @@ function BtCanvas() {
     view.oy = in_range(view.oy, 0, edge.y - canvas.height/scale);
 
     // setup the transform
-    ctx.setTransform(view.scale,0,0, view.scale, -view.ox * view.scale, -view.oy * view.scale);
+    ctx.setTransform(scale,0,0,scale, -view.ox * scale, -view.oy * scale);
 
     // draw hex grid
     drawHexGrid(view.hex_width, view.hex_height);
+
+    // draw the mechs
+    for (const mech of game.mechs) {
+      if (mech.image && mech.position.x >= 0 && mech.position.y >= 0) {
+        const px = view.hex_center(mech.position);
+        const img = mech.image;
+        const ir = r * (5/3);
+        with_rotation(ctx, px.x, px.y, mech.facing * (TAU/6), () => {
+          const is = Math.min(ir/img.width, ir/img.height);
+          const dw = is * img.width;
+          const dh = is * img.height;
+          ctx.drawImage(mech.image, px.x - dw/2, px.y - dh/2, dw, dh);
+        })
+      }
+    }
+
 
     // draw the FPS in the top corner
     if (view.fps) {
@@ -222,8 +302,6 @@ function BtCanvas() {
     view.ox += ((dS/S) * vx) / (S+dS);
     view.oy += ((dS/S) * vy) / (S+dS);
   }
-
-
 
 
   return (
