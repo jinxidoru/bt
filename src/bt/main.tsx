@@ -31,12 +31,14 @@ function point(x:number, y:number) {
 class MapView {
 
   // size
-  hex_width = 40;
-  hex_height = 40;
-  hex_radius = 32;
+  map_width = 40;
+  map_height = 90;
+
+  hexw = 84;
+  hexh = 72;
 
   // transform
-  scale = 1
+  scale = 1.5
   ox = 0
   oy = 0
 
@@ -45,34 +47,25 @@ class MapView {
 
   // debug
   paused = false;
-  fps = false;
+  fps = true;
   fps_tms : number[] = [];
 
 
-  // private
-  private _trig_r = -1;
-  private _trig : [number[],number[]] = [[],[]];
-
-
   // --- methods
-  trig() {
-    if (this._trig_r !== this.hex_radius) {
-      const r = this._trig_r = this.hex_radius;
-      const a = TAU/6;
-      this._trig = [
-        [0,1,2,3,4,5].map(n => r*Math.sin(n*a)),
-        [0,1,2,3,4,5].map(n => r*Math.cos(n*a)),
-      ];
-    }
-    return this._trig;
+  hex_center(p:Point) {
+    const h = this.hexh;
+    const w = this.hexw;
+    return point(
+      p.x * (w/4) * 3 + (w/2),
+      (p.y * 2 + (p.x%2) + 1) * (h/2));
   }
 
-  hex_center(p:Point) {
-    const r = this.hex_radius;
-    const [sin,cos] = this.trig();
-    const x = (r + (r+cos[1]) * p.x);
-    const y = (sin[1] * (2*p.y+1)) + ((p.x%2) ? sin[1] : 0);
-    return point(x,y);
+  hex_corner(p:Point) {
+    const h = this.hexh;
+    const w = this.hexw;
+    return point(
+      p.x * (w/4) * 3,
+      (p.y * 2 + (p.x%2)) * (h/2));
   }
 
 };
@@ -125,9 +118,6 @@ for (var i=0; i<game.mechs.length; i++) {
 export function BtMain() {
   return (<div className="bt-root"><BtCanvas /></div>);
 }
-
-
-
 
 
 function useAnimate(fn:any) {
@@ -183,86 +173,98 @@ function BtCanvas() {
     ctx.setTransform(1,0,0,1,0,0);
     ctx.clearRect(0,0,canvas.width, canvas.height);
 
-    // get the edges
-    const [sin,cos] = view.trig();
-    const r = view.hex_radius;
-    const mx = Math.ceil(2*r + (r+cos[1]) * (view.hex_width-1));
-    const my = Math.ceil(sin[1]*(2*view.hex_height+1));
-    const edge = point(mx,my);
-    const min_scale = Math.max(canvas.width/edge.x, canvas.height/edge.y);
+    // draw with transform
+    adjustView();
+    drawMechs();
 
-    // enforce limits
-    const scale = view.scale = in_range(view.scale, min_scale, SCALE_MAX);
-    view.ox = in_range(view.ox, 0, edge.x - canvas.width/scale);
-    view.oy = in_range(view.oy, 0, edge.y - canvas.height/scale);
-
-    // setup the transform
-    ctx.setTransform(scale,0,0,scale, -view.ox * scale, -view.oy * scale);
-
-    // draw hex grid
-    drawHexGrid(view.hex_width, view.hex_height);
-
-    // draw the mechs
-    for (const mech of game.mechs) {
-      if (mech.image && mech.position.x >= 0 && mech.position.y >= 0) {
-        const px = view.hex_center(mech.position);
-        const img = mech.image;
-        const ir = r * (5/3);
-        with_rotation(ctx, px.x, px.y, mech.facing * (TAU/6), () => {
-          const is = Math.min(ir/img.width, ir/img.height);
-          const dw = is * img.width;
-          const dh = is * img.height;
-          ctx.drawImage(mech.image, px.x - dw/2, px.y - dh/2, dw, dh);
-        })
-      }
-    }
-
-
-    // draw the FPS in the top corner
-    if (view.fps) {
-
-      // update the tracker
-      const tms = view.fps_tms;
-      tms.push(tm);
-      while (tms.length > 60)  tms.shift();
-
-      // display
-      if (tms.length > 3) {
-        const fps = Math.ceil(1000 * tms.length / (tm - tms[0]));
-        ctx.setTransform(1,0,0,1,0,0);
-        ctx.font = '13px monospace';
-        ctx.fillStyle = "red";
-        ctx.fillText(`${fps} fps`, canvas.width - 55, 20);
-      }
-    }
+    // draw without transform
+    ctx.resetTransform();
+    drawFps();
+    drawGrid();
 
 
     // ---- functions
-    function drawHexColumn(x:number, y:number, n:number) {
-      for (var j=0; j<n; j++) {
+    // double check all the scale and translation values to make sure the viewport is valid.
+    function adjustView() {
 
-        // draw the hex
-        ctx.beginPath();
-        for (var i = 0; i < 6; i++) {
-          ctx.lineTo(x + cos[i], y + sin[i]);
+      // get the edges
+      const mx = view.map_width * (view.hexw/4) * 3;
+      const my = view.map_height * view.hexh + (view.hexh/2);
+      const edge = point(mx,my);
+      const min_scale = Math.max(canvas.width/edge.x, canvas.height/edge.y);
+
+      // enforce limits
+      const scale = view.scale = in_range(view.scale, min_scale, SCALE_MAX);
+      view.ox = in_range(view.ox, 0, edge.x - canvas.width/scale);
+      view.oy = in_range(view.oy, 0, edge.y - canvas.height/scale);
+
+      // setup the transform
+      ctx.setTransform(scale,0,0,scale, -view.ox * scale, -view.oy * scale);
+    }
+
+
+    function drawMechs() {
+      for (const mech of game.mechs) {
+        if (mech.image && mech.position.x >= 0 && mech.position.y >= 0) {
+          const px = view.hex_center(mech.position);
+          const img = mech.image;
+          const ir = view.hexw * (5/6);
+          with_rotation(ctx, px.x, px.y, mech.facing * (TAU/6), () => {
+            const is = Math.min(ir/img.width, ir/img.height);
+            const dw = is * img.width;
+            const dh = is * img.height;
+            ctx.drawImage(mech.image, px.x - dw/2, px.y - dh/2, dw, dh);
+          })
         }
-        ctx.closePath();
-        ctx.stroke();
-
-        // next
-        y += sin[1]*2;
       }
     }
 
-    function drawHexGrid(xn:number, yn:number) {
-      var x = r;
-      var y = sin[1];
+    // draw the FPS in the top corner
+    function drawFps() {
+      if (view.fps) {
+
+        // update the tracker
+        const tms = view.fps_tms;
+        tms.push(tm);
+        while (tms.length > 60)  tms.shift();
+
+        // display
+        if (tms.length > 3) {
+          const fps = Math.ceil(1000 * tms.length / (tm - tms[0]));
+          ctx.font = '13px monospace';
+          ctx.fillStyle = "red";
+          ctx.fillText(`${fps}`, canvas.width - 35, 20);
+        }
+      }
+    }
+
+    // the grid is meant to be drawn on everything else
+    function drawGrid() {
+      const scale = view.scale;
+      const xoff = -view.ox * scale;
+      const yoff = -view.oy * scale;
+      const h = view.hexh * scale;
+      const w = view.hexw * scale;
+      const a = (w/4);
+      const b = a * 3;
+      const c = (h/2);
 
       ctx.strokeStyle = '#ccc';
-      for (var i=0; i<xn; i++) {
-        drawHexColumn(x,y,yn);
-        x += r + cos[1];
-        y += ((i%2) ? -1 : 1) * sin[1];
+      for (var x=0; x<view.map_width; x++) {
+        for (var y=0; y<view.map_height; y++) {
+          const xp = x * b + xoff;
+          const yp = (y+1) * h - ((x%2) ? 0 : c) + yoff;
+
+          ctx.beginPath();
+          ctx.lineTo(xp, yp);
+          ctx.lineTo(xp + a, yp - c);
+          ctx.lineTo(xp + b, yp - c);
+          ctx.lineTo(xp + w, yp);
+          ctx.lineTo(xp + b, yp + c);
+          ctx.lineTo(xp + a, yp + c);
+          ctx.lineTo(xp, yp);
+          ctx.stroke();
+        }
       }
     }
 
