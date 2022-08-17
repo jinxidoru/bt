@@ -30,10 +30,14 @@ function point(x:number, y:number) {
 
 class MapView {
 
+  // draw settings
+  redraw = true;
+
   // size
   map_width = 40;
   map_height = 90;
 
+  // hex drawing
   hexw = 84;
   hexh = 72;
 
@@ -47,7 +51,7 @@ class MapView {
 
   // debug
   paused = false;
-  fps = true;
+  fps = false;
   fps_tms : number[] = [];
 
 
@@ -60,12 +64,16 @@ class MapView {
       (p.y * 2 + (p.x%2) + 1) * (h/2));
   }
 
-  hex_corner(p:Point) {
+  hex_corner(x:number, y:number) {
     const h = this.hexh;
     const w = this.hexw;
     return point(
-      p.x * (w/4) * 3,
-      (p.y * 2 + (p.x%2)) * (h/2));
+      x * (w/4) * 3,
+      (y * 2 + (x%2)) * (h/2));
+  }
+
+  hex_dx() {
+    return (this.hexw*3) / 4;
   }
 
 };
@@ -91,6 +99,8 @@ class GameState {
   view = new MapView();
   mechs:Mech[] = [];
 };
+
+
 
 
 var anyWindow:any = window;
@@ -159,7 +169,15 @@ function BtCanvas() {
 
   useAnimate((tm:number) => {
     const view = game.view;
+
+    // setup the metrics display
+    const metrics:any = {};
+    calcFps();
+
+    // check for redraw
     if (view.paused)  return;
+    if (!view.redraw)  return;
+    view.redraw = false;
 
     // resize the canvas
     const canvas = canvasRef.current;
@@ -173,14 +191,24 @@ function BtCanvas() {
     ctx.setTransform(1,0,0,1,0,0);
     ctx.clearRect(0,0,canvas.width, canvas.height);
 
-    // draw with transform
+    // get hex view limits
     adjustView();
+    const max_view = point(
+      view.ox + canvas.width / view.scale,
+      view.oy + canvas.height / view.scale);
+    const min_hex_x = Math.max(0,Math.floor((view.ox-(view.hexw/4)) / view.hex_dx()));
+    const min_hex_y = Math.max(0,Math.floor((view.oy-(view.hexh/2)) / view.hexh));
+    const max_hex_x = Math.min(view.map_width-1, Math.floor(max_view.x / view.hex_dx()));
+    const max_hex_y = Math.min(view.map_height-1, Math.floor(max_view.y / view.hexh));
+
+    // draw with transform
+    drawMap();
     drawMechs();
 
     // draw without transform
     ctx.resetTransform();
-    drawFps();
     drawGrid();
+    drawMetrics();
 
 
     // ---- functions
@@ -188,7 +216,7 @@ function BtCanvas() {
     function adjustView() {
 
       // get the edges
-      const mx = view.map_width * (view.hexw/4) * 3;
+      const mx = view.map_width * (view.hexw/4) * 3 + (view.hexw/4);
       const my = view.map_height * view.hexh + (view.hexh/2);
       const edge = point(mx,my);
       const min_scale = Math.max(canvas.width/edge.x, canvas.height/edge.y);
@@ -200,6 +228,22 @@ function BtCanvas() {
 
       // setup the transform
       ctx.setTransform(scale,0,0,scale, -view.ox * scale, -view.oy * scale);
+    }
+
+
+    function drawMap() {
+      const dx = view.hex_dx();
+      var px = min_hex_x * dx;
+      for (var i=min_hex_x; i<=max_hex_x; i++, px += dx) {
+        var py = ((i%2) ? (view.hexh/2) : 0) + (min_hex_y * view.hexh);
+        for (var j=min_hex_y; j<=max_hex_y; j++, py += view.hexh) {
+          var n = ((i+j)%14) - 3;
+          var img = btutil.get_hex_image(`tundra_${n}`);
+          if (img) {
+            ctx.drawImage(img, px, py, view.hexw, view.hexh);
+          }
+        }
+      }
     }
 
 
@@ -215,25 +259,6 @@ function BtCanvas() {
             const dh = is * img.height;
             ctx.drawImage(mech.image, px.x - dw/2, px.y - dh/2, dw, dh);
           })
-        }
-      }
-    }
-
-    // draw the FPS in the top corner
-    function drawFps() {
-      if (view.fps) {
-
-        // update the tracker
-        const tms = view.fps_tms;
-        tms.push(tm);
-        while (tms.length > 60)  tms.shift();
-
-        // display
-        if (tms.length > 3) {
-          const fps = Math.ceil(1000 * tms.length / (tm - tms[0]));
-          ctx.font = '13px monospace';
-          ctx.fillStyle = "red";
-          ctx.fillText(`${fps}`, canvas.width - 35, 20);
         }
       }
     }
@@ -268,6 +293,72 @@ function BtCanvas() {
       }
     }
 
+    function calcFps() {
+      if (view.fps) {
+
+        // update the tracker
+        const tms = view.fps_tms;
+        tms.push(tm);
+        while (tms.length > 60)  tms.shift();
+
+        // display
+        if (tms.length > 3) {
+          metrics['fps'] = Math.ceil(1000 * tms.length / (tm - tms[0]));
+        }
+      }
+    }
+
+    function drawMetrics() {
+
+      // draw the metrics
+      const lines = Object.keys(metrics)
+        .map(x => [x,metrics[x]])
+        .sort((a,b) => a[0].localeCompare(b[0]))
+        .map(x => {
+          var val = x[1];
+          if (Array.isArray(val)) {
+            val = x[1].join(',');
+          }
+          return `${x[0]} : ${val}`
+        })
+
+      if (lines.length > 0) {
+
+        // measure the box size
+        var boxWidth = 0;
+        var boxHeight = 0;
+        var lineHeight = 0;
+        ctx.font = '13px monospace';
+        lines.forEach(ln => {
+          const dim = ctx.measureText(ln);
+          boxWidth = Math.max(dim.width, boxWidth);
+          lineHeight = dim.actualBoundingBoxAscent + dim.actualBoundingBoxDescent;
+          boxHeight += lineHeight;
+        });
+
+        // draw the box
+        const opad = 20;
+        const ipad = 10;
+        const tpad = 5;
+        boxWidth += ipad*2;
+        boxHeight += ipad + tpad * (lines.length-1);
+        ctx.fillStyle = 'white'
+        ctx.strokeStyle = 'black'
+        ctx.beginPath();
+        ctx.rect(canvas.width - boxWidth - opad, opad, boxWidth, boxHeight)
+        ctx.fill();
+        ctx.stroke();
+
+        // draw the text
+        ctx.fillStyle = "red";
+        var ypos = opad + ipad + lineHeight - 2;
+        lines.forEach(ln => {
+          ctx.fillText(ln, canvas.width - boxWidth - opad + ipad, ypos);
+          ypos += lineHeight + tpad;
+        });
+      }
+    }
+
   });
 
 
@@ -280,6 +371,7 @@ function BtCanvas() {
       view.ox -= (e.clientX - view.drag_prev.x) / view.scale;
       view.oy -= (e.clientY - view.drag_prev.y) / view.scale;
       view.drag_prev = point(e.clientX, e.clientY);
+      view.redraw = true;
     }
   }
 
@@ -303,6 +395,7 @@ function BtCanvas() {
 
     view.ox += ((dS/S) * vx) / (S+dS);
     view.oy += ((dS/S) * vy) / (S+dS);
+    view.redraw = true;
   }
 
 

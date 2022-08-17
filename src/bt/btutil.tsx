@@ -1,4 +1,9 @@
-import {PATH_MECH_IMGS} from './const'
+import {PATH_MECH_IMGS,PATH_HEX_IMGS} from './const'
+
+
+export interface Dict<T> {
+  [name:string]: T
+}
 
 
 //! Load an image and then apply the given color.
@@ -33,4 +38,25 @@ export async function load_mech_image(name:string, color:[number,number,number])
   });
 }
 
+
+const tileset:Dict<HTMLImageElement> = {};
+const tileset_loading:Dict<boolean> = {};
+
+export function get_hex_image(name:string) {
+  if (tileset[name]) {
+    return tileset[name];
+  } else {
+    load_hex_image(name);
+    return null;
+  }
+}
+
+export function load_hex_image(name:string) {
+  if (!tileset_loading[name]) {
+    tileset_loading[name] = true;
+    var img = new Image();
+    img.onload = () => { tileset[name] = img; }
+    img.src = `${PATH_HEX_IMGS}/${name}.png`;
+  }
+}
 
