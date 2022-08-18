@@ -1,6 +1,17 @@
 import {PATH_MECH_IMGS,PATH_HEX_IMGS} from './const'
 
 
+export const window_any:any = window;
+
+export interface Point {
+  x: number;
+  y: number;
+}
+
+export function point(x:number, y:number) {
+  return {x,y}
+}
+
 export interface Dict<T> {
   [name:string]: T
 }

@@ -1,130 +1,17 @@
-import {useState,useRef,useEffect,MouseEvent} from 'react'
+import {useState,useRef,MouseEvent} from 'react'
 import react from 'react'
-import * as btutil from './btutil'
+import {point} from './btutil'
 import "./main.scss"
-import {Board,load_board} from './board'
-
+import {load_board} from './board'
+import {GameState,MapView} from './game'
+import {useAnimate,useWindowEvent} from './react-utils'
+import {HEX_W, HEX_H, HEX_DX} from './const'
 
 const SCALE_MAX = 5;
 const SCALE_FACTOR = 0.005;
 const TAU = Math.PI * 2;
 
-const TEAM_COLORS:[number,number,number][] = [
-  [0,96,255],     // blue
-  [238,75,43],    // red
-  [0xff,0xb3,0],  // orange
-];
-
-
-
-interface Point {
-  x: number;
-  y: number;
-}
-
-
-function point(x:number, y:number) {
-  return {x,y}
-}
-
-
-
-class MapView {
-
-  board: Board|null = null
-
-  // draw settings
-  redraw = true;
-
-  // size
-  map_width = 16;
-  map_height = 17;
-
-  // hex drawing
-  hexw = 84;
-  hexh = 72;
-
-  // transform
-  scale = 1.5
-  ox = 0
-  oy = 0
-
-  // state
-  drag_prev : Point|null = null;
-
-  // debug
-  paused = false;
-  fps = false;
-  fps_tms : number[] = [];
-
-
-  // --- methods
-  hex_center(p:Point) {
-    const h = this.hexh;
-    const w = this.hexw;
-    return point(
-      p.x * (w/4) * 3 + (w/2),
-      (p.y * 2 + (p.x%2) + 1) * (h/2));
-  }
-
-  hex_corner(x:number, y:number) {
-    const h = this.hexh;
-    const w = this.hexw;
-    return point(
-      x * (w/4) * 3,
-      (y * 2 + (x%2)) * (h/2));
-  }
-
-  hex_dx() {
-    return (this.hexw*3) / 4;
-  }
-};
-
-
-class Mech {
-  image: any;
-  position = point(-1,-1);
-  team_color = 'blue';
-  facing = 1;
-
-  constructor(x:number, y:number, img_url:string, team:number) {
-    this.position = point(x,y);
-
-    btutil.load_mech_image(img_url, TEAM_COLORS[team]).then(img => {
-      this.image = img;
-    });
-  }
-}
-
-
-class GameState {
-  view = new MapView();
-  mechs:Mech[] = [];
-};
-
-
-
-
-var anyWindow:any = window;
-
-
 const game = new GameState();
-
-anyWindow.game = game;
-
-
-
-game.mechs.push(new Mech(0,0,'Daimyo',0));
-game.mechs.push(new Mech(0,1,'Wolverine',1));
-game.mechs.push(new Mech(2,3,'ZeusX_X3',2));
-game.mechs.push(new Mech(1,6,'jabberwocky_65a',1));
-game.mechs[0].facing = 2;
-
-for (var i=0; i<game.mechs.length; i++) {
-  game.mechs[i].facing = i%6;
-}
-
-
 
 load_board('grasslands_2').then(board => {
   game.view.board = board;
@@ -136,31 +23,14 @@ export function BtMain() {
 
   load_board('grasslands_2').then(board => {
     game.view.board = board;
-    anyWindow.view = game.view;
     setView(game.view);
   });
-
 
   if (view) {
     return (<div className="bt-root"><BtCanvas view={view} /></div>);
   } else {
     return (<div className="bt-root">Loading...</div>);
   }
-}
-
-
-function useAnimate(fn:any) {
-  const animateRef = useRef<number>(-1);
-
-  const animate = (time:any) => {
-    animateRef.current = requestAnimationFrame(animate);
-    fn(time);
-  }
-
-  useEffect(() => {
-    animateRef.current = window.requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(animateRef.current);
-  });
 }
 
 
@@ -181,18 +51,12 @@ function with_rotation(ctx:any, x:number, y:number, a:number, fn:any) {
 }
 
 
-
-
 function BtCanvas(props:{view:MapView}) {
   const canvasRef = useRef<any>()
   const view = props.view;
 
   // redraw after resize
-  useEffect(() => {
-    const listener = () => { view.redraw = true; };
-    window.addEventListener('resize', listener);
-    return () => { window.removeEventListener('resize', listener); };
-  });
+  useWindowEvent('resize', () => { view.redraw = true; });
 
   useAnimate((tm:number) => {
 
@@ -226,10 +90,10 @@ function BtCanvas(props:{view:MapView}) {
     const max_view = point(
       view.ox + canvas.width / view.scale,
       view.oy + canvas.height / view.scale);
-    const min_hex_x = Math.max(0,Math.floor((view.ox-(view.hexw/4)) / view.hex_dx()));
-    const min_hex_y = Math.max(0,Math.floor((view.oy-(view.hexh/2)) / view.hexh));
-    const max_hex_x = Math.min(view.map_width-1, Math.floor(max_view.x / view.hex_dx()));
-    const max_hex_y = Math.min(view.map_height-1, Math.floor(max_view.y / view.hexh));
+    const min_hex_x = Math.max(0,Math.floor((view.ox-(HEX_W/4)) / HEX_DX));
+    const min_hex_y = Math.max(0,Math.floor((view.oy-(HEX_H/2)) / HEX_H));
+    const max_hex_x = Math.min(board.width-1, Math.floor(max_view.x / HEX_DX));
+    const max_hex_y = Math.min(board.height-1, Math.floor(max_view.y / HEX_H));
 
     // draw with transform
     drawMap();
@@ -246,8 +110,8 @@ function BtCanvas(props:{view:MapView}) {
     function adjustView() {
 
       // get the edges
-      const mx = view.map_width * (view.hexw/4) * 3 + (view.hexw/4);
-      const my = view.map_height * view.hexh + (view.hexh/2);
+      const mx = board.width * (HEX_W/4) * 3 + (HEX_W/4);
+      const my = board.height * HEX_H + (HEX_H/2);
       const edge = point(mx,my);
       const min_scale = Math.max(canvas.width/edge.x, canvas.height/edge.y);
 
@@ -262,15 +126,15 @@ function BtCanvas(props:{view:MapView}) {
 
 
     function drawMap() {
-      const dx = view.hex_dx();
+      const dx = HEX_DX;
       var px = min_hex_x * dx;
       for (var i=min_hex_x; i<=max_hex_x; i++, px += dx) {
-        var py = ((i%2) ? (view.hexh/2) : 0) + (min_hex_y * view.hexh);
-        for (var j=min_hex_y; j<=max_hex_y; j++, py += view.hexh) {
+        var py = ((i%2) ? (HEX_H/2) : 0) + (min_hex_y * HEX_H);
+        for (var j=min_hex_y; j<=max_hex_y; j++, py += HEX_H) {
           const hex = board.hex(i,j);
-          ctx.drawImage(hex.tile_base, px, py, view.hexw, view.hexh);
+          ctx.drawImage(hex.tile_base, px, py, HEX_W, HEX_H);
           for (var extra of hex.tile_extra) {
-            ctx.drawImage(extra, px, py, view.hexw, view.hexh);
+            ctx.drawImage(extra, px, py, HEX_W, HEX_H);
           }
         }
       }
@@ -282,7 +146,7 @@ function BtCanvas(props:{view:MapView}) {
         if (mech.image && mech.position.x >= 0 && mech.position.y >= 0) {
           const px = view.hex_center(mech.position);
           const img = mech.image;
-          const ir = view.hexw * (5/6);
+          const ir = HEX_W * (5/6);
           with_rotation(ctx, px.x, px.y, mech.facing * (TAU/6), () => {
             const is = Math.min(ir/img.width, ir/img.height);
             const dw = is * img.width;
@@ -298,15 +162,15 @@ function BtCanvas(props:{view:MapView}) {
       const scale = view.scale;
       const xoff = -view.ox * scale;
       const yoff = -view.oy * scale;
-      const h = view.hexh * scale;
-      const w = view.hexw * scale;
+      const h = HEX_H * scale;
+      const w = HEX_W * scale;
       const a = (w/4);
       const b = a * 3;
       const c = (h/2);
 
       ctx.strokeStyle = '#ccc';
-      for (var x=0; x<view.map_width; x++) {
-        for (var y=0; y<view.map_height; y++) {
+      for (var x=0; x<board.width; x++) {
+        for (var y=0; y<board.height; y++) {
           const xp = x * b + xoff;
           const yp = (y+1) * h - ((x%2) ? 0 : c) + yoff;
 
