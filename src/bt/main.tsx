@@ -2,6 +2,7 @@ import {useState,useRef,useEffect,MouseEvent} from 'react'
 import react from 'react'
 import * as btutil from './btutil'
 import "./main.scss"
+import {Board,load_board} from './board'
 
 
 const SCALE_MAX = 5;
@@ -30,12 +31,14 @@ function point(x:number, y:number) {
 
 class MapView {
 
+  board: Board|null = null
+
   // draw settings
   redraw = true;
 
   // size
-  map_width = 40;
-  map_height = 90;
+  map_width = 16;
+  map_height = 17;
 
   // hex drawing
   hexw = 84;
@@ -75,7 +78,6 @@ class MapView {
   hex_dx() {
     return (this.hexw*3) / 4;
   }
-
 };
 
 
@@ -107,10 +109,8 @@ var anyWindow:any = window;
 
 
 const game = new GameState();
-const view = game.view;
 
 anyWindow.game = game;
-anyWindow.view = view;
 
 
 
@@ -125,8 +125,27 @@ for (var i=0; i<game.mechs.length; i++) {
 }
 
 
+
+load_board('grasslands_2').then(board => {
+  game.view.board = board;
+});
+
+
 export function BtMain() {
-  return (<div className="bt-root"><BtCanvas /></div>);
+  const [view,setView] = useState<MapView|null>(null);
+
+  load_board('grasslands_2').then(board => {
+    game.view.board = board;
+    anyWindow.view = game.view;
+    setView(game.view);
+  });
+
+
+  if (view) {
+    return (<div className="bt-root"><BtCanvas view={view} /></div>);
+  } else {
+    return (<div className="bt-root">Loading...</div>);
+  }
 }
 
 
@@ -164,15 +183,26 @@ function with_rotation(ctx:any, x:number, y:number, a:number, fn:any) {
 
 
 
-function BtCanvas() {
+function BtCanvas(props:{view:MapView}) {
   const canvasRef = useRef<any>()
+  const view = props.view;
+
+  // redraw after resize
+  useEffect(() => {
+    const listener = () => { view.redraw = true; };
+    window.addEventListener('resize', listener);
+    return () => { window.removeEventListener('resize', listener); };
+  });
 
   useAnimate((tm:number) => {
-    const view = game.view;
 
     // setup the metrics display
     const metrics:any = {};
     calcFps();
+
+    // verify that the board exists
+    if (!view.board)  return;
+    const board = view.board;
 
     // check for redraw
     if (view.paused)  return;
@@ -237,10 +267,10 @@ function BtCanvas() {
       for (var i=min_hex_x; i<=max_hex_x; i++, px += dx) {
         var py = ((i%2) ? (view.hexh/2) : 0) + (min_hex_y * view.hexh);
         for (var j=min_hex_y; j<=max_hex_y; j++, py += view.hexh) {
-          var n = ((i+j)%14) - 3;
-          var img = btutil.get_hex_image(`tundra_${n}`);
-          if (img) {
-            ctx.drawImage(img, px, py, view.hexw, view.hexh);
+          const hex = board.hex(i,j);
+          ctx.drawImage(hex.tile_base, px, py, view.hexw, view.hexh);
+          for (var extra of hex.tile_extra) {
+            ctx.drawImage(extra, px, py, view.hexw, view.hexh);
           }
         }
       }
@@ -341,7 +371,7 @@ function BtCanvas() {
         const ipad = 10;
         const tpad = 5;
         boxWidth += ipad*2;
-        boxHeight += ipad + tpad * (lines.length-1);
+        boxHeight += ipad*2 + tpad * (lines.length-1);
         ctx.fillStyle = 'white'
         ctx.strokeStyle = 'black'
         ctx.beginPath();
@@ -397,7 +427,6 @@ function BtCanvas() {
     view.oy += ((dS/S) * vy) / (S+dS);
     view.redraw = true;
   }
-
 
   return (
     <canvas width="800" height="800" ref={canvasRef}

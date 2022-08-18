@@ -39,24 +39,66 @@ export async function load_mech_image(name:string, color:[number,number,number])
 }
 
 
-const tileset:Dict<HTMLImageElement> = {};
-const tileset_loading:Dict<boolean> = {};
+export type Image = HTMLImageElement
+
+type TileImage = {
+  loaded: boolean
+  image: Image
+  promise: Promise<Image>
+}
+
+const tileset: Dict<TileImage> = {};
 
 export function get_hex_image(name:string) {
-  if (tileset[name]) {
-    return tileset[name];
+  const tile = tileset[name];
+  if (tile && tile.loaded) {
+    return tile.image;
   } else {
-    load_hex_image(name);
     return null;
   }
 }
 
-export function load_hex_image(name:string) {
-  if (!tileset_loading[name]) {
-    tileset_loading[name] = true;
-    var img = new Image();
-    img.onload = () => { tileset[name] = img; }
-    img.src = `${PATH_HEX_IMGS}/${name}.png`;
+export async function load_hex_image(name:string) {
+  var tile = tileset[name];
+  if (!tile) {
+    const img = new Image()
+    tile = tileset[name] = {
+      loaded: false,
+      image: img,
+      promise: new Promise<HTMLImageElement>(resolve => {
+        img.onload = () => {
+          tile.loaded = true;
+          resolve(img);
+        }
+        img.onerror = () => {
+          console.log(`failed to load tile: ${name}`)
+        }
+
+        var url = `${PATH_HEX_IMGS}/${name}`
+        if (!url.endsWith('.gif')) {
+          url += '.png';
+        }
+        img.src = url;
+      })
+    }
   }
+
+  return tile.promise;
 }
+
+async function load_hex_tiles_ary(names:string[]) {
+  return Promise.all(names.map(n => load_hex_image(n)));
+}
+
+export async function load_hex_tiles(tiles:Dict<string[]>) {
+  var promises : [string,Promise<Image[]>][] = [];
+  promises = Object.keys(tiles).map(k => [k, load_hex_tiles_ary(tiles[k])])
+  const rv : Dict<Image[]> = {};
+  for (var e of promises) {
+    rv[e[0]] = await e[1];
+  }
+  return rv;
+}
+
+
 
