@@ -1,9 +1,9 @@
-import {useState,useRef,MouseEvent} from 'react'
+import {useState,useRef,useEffect,MouseEvent} from 'react'
 import react from 'react'
 import {point} from './btutil'
 import "./main.scss"
-import {load_board} from './board'
-import {GameState,MapView} from './game'
+import {Board} from './board'
+import {GameState} from './game'
 import {useAnimate,useWindowEvent} from './react-utils'
 import {HEX_W, HEX_H, HEX_DX} from './const'
 
@@ -11,23 +11,20 @@ const SCALE_MAX = 5;
 const SCALE_FACTOR = 0.005;
 const TAU = Math.PI * 2;
 
-const game = new GameState();
-
-load_board('grasslands_2').then(board => {
-  game.view.board = board;
-});
-
 
 export function BtMain() {
-  const [view,setView] = useState<MapView|null>(null);
+  const [game,setGame] = useState<GameState|null>(null);
 
-  load_board('grasslands_2').then(board => {
-    game.view.board = board;
-    setView(game.view);
-  });
+  useEffect(() => {
+    Board.load('grasslands_2').then(board => {
+      const game = new GameState();
+      game.set_board(board);
+      setGame(game);
+    });
+  }, []);
 
-  if (view) {
-    return (<div className="bt-root"><BtCanvas view={view} /></div>);
+  if (game) {
+    return (<div className="bt-root"><BtCanvas game={game} /></div>);
   } else {
     return (<div className="bt-root">Loading...</div>);
   }
@@ -51,9 +48,10 @@ function with_rotation(ctx:any, x:number, y:number, a:number, fn:any) {
 }
 
 
-function BtCanvas(props:{view:MapView}) {
+function BtCanvas(props:{game:GameState}) {
   const canvasRef = useRef<any>()
-  const view = props.view;
+  const game = props.game;
+  const {view,board} = game;
 
   // redraw after resize
   useWindowEvent('resize', () => { view.redraw = true; });
@@ -61,12 +59,8 @@ function BtCanvas(props:{view:MapView}) {
   useAnimate((tm:number) => {
 
     // setup the metrics display
-    const metrics:any = {};
+    const metrics:any = {...view.debug};
     calcFps();
-
-    // verify that the board exists
-    if (!view.board)  return;
-    const board = view.board;
 
     // check for redraw
     if (view.paused)  return;
@@ -95,13 +89,12 @@ function BtCanvas(props:{view:MapView}) {
     const max_hex_x = Math.min(board.width-1, Math.floor(max_view.x / HEX_DX));
     const max_hex_y = Math.min(board.height-1, Math.floor(max_view.y / HEX_H));
 
-    // draw with transform
+    // draw functions
     drawMap();
-    drawMechs();
-
-    // draw without transform
-    ctx.resetTransform();
     drawGrid();
+    drawMechs();
+    drawMoveOverlay();
+    drawPath();
     drawMetrics();
 
 
@@ -126,6 +119,7 @@ function BtCanvas(props:{view:MapView}) {
 
 
     function drawMap() {
+      ctx.save();
       const dx = HEX_DX;
       var px = min_hex_x * dx;
       for (var i=min_hex_x; i<=max_hex_x; i++, px += dx) {
@@ -136,8 +130,20 @@ function BtCanvas(props:{view:MapView}) {
           for (var extra of hex.tile_extra) {
             ctx.drawImage(extra, px, py, HEX_W, HEX_H);
           }
+
+          // draw the hex number
+          if (view.show_hex_number) {
+            ctx.lineWidth = 3;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.font = '6pt courier';
+            ctx.fillStyle = 'white';
+            const hexn = board.index_of(i,j);
+            ctx.fillText(`${hexn}`, px + (HEX_W/2), py + 8);
+          }
         }
       }
+      ctx.restore();
     }
 
 
@@ -159,6 +165,8 @@ function BtCanvas(props:{view:MapView}) {
 
     // the grid is meant to be drawn on everything else
     function drawGrid() {
+      const transform = ctx.getTransform();
+      ctx.resetTransform();
       const scale = view.scale;
       const xoff = -view.ox * scale;
       const yoff = -view.oy * scale;
@@ -185,6 +193,8 @@ function BtCanvas(props:{view:MapView}) {
           ctx.stroke();
         }
       }
+
+      ctx.setTransform(transform);
     }
 
     function calcFps() {
@@ -203,6 +213,7 @@ function BtCanvas(props:{view:MapView}) {
     }
 
     function drawMetrics() {
+      ctx.resetTransform();
 
       // draw the metrics
       const lines = Object.keys(metrics)
@@ -253,11 +264,86 @@ function BtCanvas(props:{view:MapView}) {
       }
     }
 
+
+    function drawPath() {
+      if (!view.path)  return;
+      const path = view.path;
+      ctx.save();
+
+      // select the colors
+      const mode = path.mode
+      const c1 = (mode===0) ? 'white' : (mode===1) ? 'black' : (mode===2) ? 'red' : 'yellow';
+      const c2 = (mode===0 || mode===3) ? 'black' : 'white';
+
+      // draw the lines
+      ctx.strokeStyle = c1;
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      for (let i=0; i<path.hexes.length; i++) {
+        let {x,y} = view.center_idx(path.hexes[i]);
+        ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+
+      // draw the circles
+      ctx.lineWidth = 3;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = '8pt impact';
+      for (let i=0; i<path.hexes.length; i++) {
+        let {x,y} = view.center_idx(path.hexes[i]);
+        ctx.beginPath();
+        ctx.arc(x, y, 9, 0, TAU);
+        ctx.fillStyle = c2;
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = c1;
+        ctx.fillText(path.mps[i] || 0, x, y);
+
+        if (i === (path.hexes.length-1)) {
+          ctx.beginPath();
+          ctx.arc(x, y, 16, (path.facing-2) * (Math.PI/3), (path.facing-1) * (Math.PI/3));
+          ctx.stroke();
+        }
+      }
+
+      ctx.restore();
+    }
+
+
+    function drawMoveOverlay() {
+      if (!view.move_overlay)  return;
+
+      // set the fill style
+      const styles = ['rgba(255,255,255,.7)','rgba(0,0,0,.4)']
+      ctx.fillStyle = styles[view.move_overlay.mode];
+
+      // draw each hex
+      const hexes = view.move_overlay.hexes;
+      for (let i=0; i<hexes.length; i++) {
+        if (hexes[i]) {
+          let pt = view.center_idx(i);
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 7, 0, TAU);
+          ctx.fill();
+        }
+      }
+    }
+
   });
 
 
 
   // --- view movement
+  function to_view_xy(e:MouseEvent) {
+    const brect = canvasRef.current.getBoundingClientRect();
+    return [
+      (e.clientX - brect.x) / view.scale + view.ox,
+      (e.clientY - brect.y) / view.scale + view.oy
+    ];
+  }
+
   function onMouseMove(e:MouseEvent) {
 
     // dragging the view
@@ -266,6 +352,13 @@ function BtCanvas(props:{view:MapView}) {
       view.oy -= (e.clientY - view.drag_prev.y) / view.scale;
       view.drag_prev = point(e.clientX, e.clientY);
       view.redraw = true;
+
+    // pathing
+    } else if (view.path) {
+      const [vx,vy] = to_view_xy(e);
+      const hex = view.hex_from_view_xy(vx, vy);
+      const facing = view.facing_from_view_xy(hex, vx, vy);
+      game.path_update(hex, facing);
     }
   }
 

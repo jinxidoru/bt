@@ -17,6 +17,19 @@ export class Board {
     this.hexes = iseq(size).map(() => new Hex(tile_dflt));
   }
 
+  static empty() {
+    let blank = new window.Image(84,72);
+    return new Board(0,0,blank);
+  }
+
+  static load(name:string) {
+    if (name === 'grasslands_2') {
+      return load_grasslands();
+    } else {
+      throw new Error(`unknown board: ${name}`)
+    }
+  }
+
   hex(x:number, y:number) {
     return this.hexes[this.width * y + x];
   }
@@ -26,6 +39,20 @@ export class Board {
       return null;
     } else {
       return this.hex(x,y);
+    }
+  }
+
+  from_index(idx:number) {
+    let x = idx % this.width;
+    let y = Math.floor(idx / this.width);
+    return {x,y};
+  }
+
+  index_of(x:number, y:number) {
+    if ((x<0) || (y<0) || (x>=this.width) || (y>=this.height)) {
+      return -1;
+    } else {
+      return (this.width * y + x);
     }
   }
 
@@ -39,6 +66,38 @@ export class Board {
       this.hex_at(x-1,y+dy+1),
       this.hex_at(x-1,y+dy),
     ]
+  }
+
+  hex_by_facing(src:number, facing:number) : number {
+    let x = src % this.width;
+    let y = Math.floor(src / this.width);
+    if (facing === 0) {
+      y--;
+    } else if (facing === 1) {
+      x++;
+      y -= (x%2)
+    } else if (facing === 2) {
+      y += (x%2);
+      x++;
+    } else if (facing === 3) {
+      y++
+    } else if (facing === 4) {
+      y += (x%2);
+      x--;
+    } else if (facing === 5) {
+      x--;
+      y -= (x%2);
+    }
+    return this.index_of(x,y);
+  }
+
+
+  // ---- moving
+  move_cost(src:number, dst:number) {
+    const dhex = this.hexes[dst];
+    const shex = this.hexes[src];
+    let mp = 1 + dhex.woods + (dhex.rough?1:0) + Math.abs(shex.level - dhex.level);
+    return mp;
   }
 }
 
@@ -121,15 +180,6 @@ async function load_grasslands() {
   }
 
   return board;
-}
-
-
-export async function load_board(name:string) {
-  if (name === 'grasslands_2') {
-    return load_grasslands();
-  } else {
-    throw new Error(`unknown board: ${name}`)
-  }
 }
 
 
