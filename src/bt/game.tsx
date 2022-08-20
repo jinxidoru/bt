@@ -162,20 +162,12 @@ export class GameState {
     for (var i=0; i<this.mechs.length; i++) {
       this.mechs[i].facing = (i%6) as Facing;
     }
-
   }
 
   set_board(board:Board) {
     this.board = board;
     this.view.board = board;
     this.view.redraw = true;
-
-
-    const mech = this.mechs[2];
-    const olay = this.move_overlay(mech.hex, mech.facing, mech.mps_run, mech);
-    this.view.move_overlay = olay;
-
-    this.view.debug['mps'] = mech.mps_run;
   }
 
 
