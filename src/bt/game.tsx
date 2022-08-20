@@ -70,12 +70,6 @@ export class MapView {
 
 
   // --- methods
-  hex_center(p:Point) {
-    return point(
-      p.x * (HEX_W/4) * 3 + (HEX_W/2),
-      (p.y * 2 + (p.x%2) + 1) * (HEX_H/2));
-  }
-
   hex_corner(x:number, y:number) {
     return point(
       x * (HEX_W/4) * 3,
@@ -84,7 +78,9 @@ export class MapView {
 
   center_idx(idx:number) {
     const {x,y} = this.board.from_index(idx);
-    return this.hex_center({x,y});
+    return point(
+      x * (HEX_W/4) * 3 + (HEX_W/2),
+      (y * 2 + (x%2) + 1) * (HEX_H/2));
   }
 
   hex_from_view_xy(vx:number, vy:number) {
@@ -136,15 +132,11 @@ export class MapView {
 
 export class Mech {
   image: any;
-  position = point(-1,-1);
-  team_color = 'blue';
   facing:Facing = 1;
   mps_walk = 6;
   mps_run = 9;
 
-  constructor(x:number, y:number, img_url:string, team:number) {
-    this.position = point(x,y);
-
+  constructor(public hex:number, img_url:string, public team:number) {
     load_mech_image(img_url, TEAM_COLORS[team]).then(img => {
       this.image = img;
     });
@@ -161,16 +153,15 @@ export class GameState {
     window_any.game = this;
     window_any.view = this;
 
-    this.mechs.push(new Mech(0,0,'Daimyo',0));
-    this.mechs.push(new Mech(0,1,'Wolverine',1));
-    this.mechs.push(new Mech(2,3,'ZeusX_X3',2));
-    this.mechs.push(new Mech(1,6,'jabberwocky_65a',1));
-    this.mechs[0].facing = 2;
+    this.mechs.push(new Mech(0,'Daimyo',0));
+    this.mechs.push(new Mech(16,'Wolverine',1));
+    this.mechs.push(new Mech(50,'ZeusX_X3',2));
+    this.mechs.push(new Mech(97,'jabberwocky_65a',2));
+    this.mechs.push(new Mech(51,'jabberwocky_65a',1));
 
     for (var i=0; i<this.mechs.length; i++) {
       this.mechs[i].facing = (i%6) as Facing;
     }
-
 
   }
 
@@ -181,9 +172,10 @@ export class GameState {
 
 
     const mech = this.mechs[2];
-    const orig_hex = this.board.index_of(mech.position.x, mech.position.y);
-    const olay = this.move_overlay(orig_hex, mech.facing, mech.mps_run);
+    const olay = this.move_overlay(mech.hex, mech.facing, mech.mps_run, mech);
     this.view.move_overlay = olay;
+
+    this.view.debug['mps'] = mech.mps_run;
   }
 
 
@@ -219,7 +211,11 @@ export class GameState {
     while (true) {
       const next = overlay[hex].faces[facing];
       path.hexes.unshift(hex);
-      path.mps.unshift(next.mps);
+      if (hex === dst) {
+        path.mps.unshift(next.mps);
+      } else {
+        path.mps.unshift(overlay[hex].faces[next.face].mps);
+      }
       if (next.from === hex)  break;
       hex = next.from;
       facing = next.face;
@@ -228,13 +224,14 @@ export class GameState {
 
 
   // --- overlay
-  move_overlay(orig:number, orig_face:Facing, mps:number) : MoveOverlay {
+  move_overlay(orig:number, orig_face:Facing, mps:number, mech:Mech) : MoveOverlay {
     const board = this.board;
     const olay:OlayHex[] = [];
 
-    function step(hex:number, from:number, face:Facing, mps:number) {
+    const step = (hex:number, from:number, face:Facing, mps:number) => {
       if (hex !== from)  mps -= board.move_cost(from,hex);
       if (mps < 0)  return;
+      if (this.is_obstructed(hex,mech.team))  return;
 
       // initialize
       let cur = olay[hex];
@@ -262,6 +259,19 @@ export class GameState {
 
     step(orig,orig,orig_face,mps);
     return {mode:1, hexes:olay}
+  }
+
+
+  is_obstructed(hex:number, team:number = -1) {
+
+    // check for a mech
+    for (let mech of this.mechs) {
+      if ((mech.team !== team) && (mech.hex === hex)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
 };

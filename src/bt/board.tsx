@@ -8,12 +8,13 @@ function iseq(size:number) {
 
 export class Board {
   hexes: Hex[] = [];
+  size: number = 0;
 
   constructor(
       public width:number, public height:number,
       public tile_dflt:Image
   ) {
-    const size = width * height;
+    const size = this.size = width * height;
     this.hexes = iseq(size).map(() => new Hex(tile_dflt));
   }
 
@@ -34,14 +35,6 @@ export class Board {
     return this.hexes[this.width * y + x];
   }
 
-  hex_at(x:number, y:number) {
-    if ((x<0) || (y<0) || (x>=this.width) || (y>=this.height)) {
-      return null;
-    } else {
-      return this.hex(x,y);
-    }
-  }
-
   from_index(idx:number) {
     let x = idx % this.width;
     let y = Math.floor(idx / this.width);
@@ -56,39 +49,42 @@ export class Board {
     }
   }
 
-  borders(x:number, y:number) {
-    const dy = (x%2) ? 0 : -1;
-    return [
-      this.hex_at(x,y-1),
-      this.hex_at(x+1,y+dy),
-      this.hex_at(x+1,y+dy+1),
-      this.hex_at(x,y+1),
-      this.hex_at(x-1,y+dy+1),
-      this.hex_at(x-1,y+dy),
-    ]
+  borders(hex:number) {
+    const x = hex % this.width;
+    const y = Math.floor(hex / this.width);
+
+    let a = (hex-this.width);
+    let b = (x%2) ? (hex+1) : (a+1);
+    let c = (b + this.width);
+    let d = (hex + this.width);
+    let e = (x%2) ? (d-1) : (hex-1);
+    let f = (e - this.width);
+
+    // x boundary
+    if (x === 0) {
+      e = f = -1;
+    } else if (x === (this.width-1)) {
+      b = c = -1;
+    }
+
+    // y boundary
+    if (y === 0) {
+      a = -1;
+      if (x%2 === 0) {
+        b = f = -1;
+      }
+    } else if (y === (this.height-1)) {
+      d = -1;
+      if (x%2 === 1) {
+        c = e = -1;
+      }
+    }
+
+    return [a,b,c,d,e,f];
   }
 
   hex_by_facing(src:number, facing:number) : number {
-    let x = src % this.width;
-    let y = Math.floor(src / this.width);
-    if (facing === 0) {
-      y--;
-    } else if (facing === 1) {
-      x++;
-      y -= (x%2)
-    } else if (facing === 2) {
-      y += (x%2);
-      x++;
-    } else if (facing === 3) {
-      y++
-    } else if (facing === 4) {
-      y += (x%2);
-      x--;
-    } else if (facing === 5) {
-      x--;
-      y -= (x%2);
-    }
-    return this.index_of(x,y);
+    return this.borders(src)[facing];
   }
 
 
@@ -97,6 +93,7 @@ export class Board {
     const dhex = this.hexes[dst];
     const shex = this.hexes[src];
     let mp = 1 + dhex.woods + (dhex.rough?1:0) + Math.abs(shex.level - dhex.level);
+    if (dhex.depth > 0)  mp++;
     return mp;
   }
 }
@@ -161,20 +158,17 @@ async function load_grasslands() {
   });
 
   // attach the inclines
-  for (var x=0; x<board.width; x++) {
-    for (var y=0; y<board.height; y++) {
-      const hex = board.hex(x,y);
-      if (hex.level > 0) {
-        let incline = 0;
-        const borders = board.borders(x,y);
-        borders.forEach((h,n) => {
-          if (h && h.level < hex.level) {
-            incline += (1<<n);
-          }
-        });
-        if (incline > 0) {
-          hex.tile_extra.unshift(tiles.incline[incline-1]);
+  for (let i=0; i<board.size; i++) {
+    const hex = board.hexes[i];
+    if (hex.level > 0) {
+      let incline = 0;
+      board.borders(i).forEach((h,n) => {
+        if ((h>=0) && board.hexes[h].level < hex.level) {
+          incline += (1<<n);
         }
+      });
+      if (incline > 0) {
+        hex.tile_extra.unshift(tiles.incline[incline-1]);
       }
     }
   }

@@ -149,8 +149,8 @@ function BtCanvas(props:{game:GameState}) {
 
     function drawMechs() {
       for (const mech of game.mechs) {
-        if (mech.image && mech.position.x >= 0 && mech.position.y >= 0) {
-          const px = view.hex_center(mech.position);
+        if (mech.image && mech.hex >= 0) {
+          const px = view.center_idx(mech.hex);
           const img = mech.image;
           const ir = HEX_W * (5/6);
           with_rotation(ctx, px.x, px.y, mech.facing * (TAU/6), () => {
