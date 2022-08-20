@@ -1,14 +1,57 @@
+$sideFull : 350px;
+$sideMini : 100px;
+
+
+html {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  height: 100%;
+}
+
 
 .bt-root {
   position: absolute;
   top: 0;
+  bottom: 0;
   left: 0;
   right: 0;
-  bottom: 0;
-  overflow: hidden;
+
+  .bt-sidebar {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+
+    width: $sideFull;
+
+    vertical-align: top;
+    background-color: red;
+  }
+
+  .bt-center {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: $sideFull;
+    right: 0;
+    overflow: hidden;
+  }
+
+  &.sb-mini {
+    .bt-sidebar { width: $sideMini; }
+    .bt-center { left: $sideMini; }
+  }
+
+  &.sb-none {
+    .bt-sidebar { width: 0; }
+    .bt-center { left: 0; }
+  }
+
 
   canvas {
     position: relative;
-
   }
 }
