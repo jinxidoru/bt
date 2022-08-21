@@ -9,6 +9,7 @@ import {GameState} from './game'
 const SCALE_MAX = 5;
 const SCALE_FACTOR = 0.005;
 const TAU = Math.PI * 2;
+const MAX_GUTTER = 400;
 
 
 
@@ -58,7 +59,8 @@ export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
     // clear the canvas
     const ctx = canvas.getContext("2d");
     ctx.setTransform(1,0,0,1,0,0);
-    ctx.clearRect(0,0,canvas.width, canvas.height);
+    ctx.fillStyle = '#333'
+    ctx.fillRect(0,0,canvas.width, canvas.height);
 
     // get hex view limits
     adjustView();
@@ -87,12 +89,14 @@ export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
       const mx = board.width * (HEX_W/4) * 3 + (HEX_W/4);
       const my = board.height * HEX_H + (HEX_H/2);
       const edge = point(mx,my);
-      const min_scale = Math.max(canvas.width/edge.x, canvas.height/edge.y);
+      const min_scale = Math.max(
+        canvas.width/(edge.x+MAX_GUTTER),
+        canvas.height/(edge.y+MAX_GUTTER));
 
       // enforce limits
       const scale = view.scale = in_range(view.scale, min_scale, SCALE_MAX);
-      view.ox = in_range(view.ox, 0, edge.x - canvas.width/scale);
-      view.oy = in_range(view.oy, 0, edge.y - canvas.height/scale);
+      view.ox = in_range(view.ox, -MAX_GUTTER, edge.x - canvas.width/scale + MAX_GUTTER);
+      view.oy = in_range(view.oy, -MAX_GUTTER, edge.y - canvas.height/scale + MAX_GUTTER);
 
       // setup the transform
       ctx.setTransform(scale,0,0,scale, -view.ox * scale, -view.oy * scale);

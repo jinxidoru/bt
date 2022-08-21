@@ -64,7 +64,7 @@ export class MapView {
 
   // movement
   move_overlay: MoveOverlay|null = null;
-  path: Path = new Path();
+  path: Path|null = null;
 
   board = Board.empty();
 
@@ -131,12 +131,14 @@ export class MapView {
 
 
 export class Mech {
+  name: string;
   image: any;
   facing:Facing = 1;
   mps_walk = 6;
   mps_run = 9;
 
   constructor(public hex:number, img_url:string, public team:number) {
+    this.name = img_url;
     load_mech_image(img_url, TEAM_COLORS[team]).then(img => {
       this.image = img;
     });
