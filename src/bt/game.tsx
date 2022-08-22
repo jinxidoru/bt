@@ -63,7 +63,6 @@ export class MapView {
   show_hex_number = true;
 
   // movement
-  move_overlay: MoveOverlay|null = null;
   path: Path|null = null;
 
   board = Board.empty();
@@ -130,7 +129,10 @@ export class MapView {
 };
 
 
+let mechNextId = 1;
+
 export class Mech {
+  id: number;
   name: string;
   image: any;
   facing:Facing = 1;
@@ -138,6 +140,7 @@ export class Mech {
   mps_run = 9;
 
   constructor(public hex:number, img_url:string, public team:number) {
+    this.id = mechNextId++;
     this.name = img_url;
     load_mech_image(img_url, TEAM_COLORS[team]).then(img => {
       this.image = img;
@@ -173,23 +176,33 @@ export class GameState {
   }
 
 
+  get_mech_by_id(id:number) {
+    return this.mechs.find(m => (m.id === id));
+  }
+
+
+
   // ---- pathing
-  path_update(dst:number, facing:Facing) {
-    if (!this.view.path)  return;
-    const path = this.view.path;
+  path_update(dst:number, facing:Facing, moveOverlay:MoveOverlay) {
+    const view = this.view;
 
     // check for ignorable
-    if (path.facing === facing && path.hexes[path.hexes.length-1] === dst)
-      return;
-    this.view.redraw = true;
+    if (view.path) {
+      const path = view.path;
+      if (path.facing === facing && path.hexes[path.hexes.length-1] === dst)
+        return;
+    }
+
+    // create a new path
+    const path = view.path = new Path();
+    view.redraw = true;
 
     // get the movement overlay
     path.hexes = [];
     path.mps = [];
-    if (!this.view.move_overlay || !this.view.move_overlay.hexes[dst])
-      return;
-    const overlay = this.view.move_overlay.hexes;
-    path.mode = this.view.move_overlay.mode;
+    if (!moveOverlay.hexes[dst]) return;
+    const overlay = moveOverlay.hexes;
+    path.mode = moveOverlay.mode;
 
     // find workable facing
     if (!overlay[dst].faces[facing]) {
@@ -214,11 +227,16 @@ export class GameState {
       hex = next.from;
       facing = next.face;
     }
+
   }
 
 
   // --- overlay
-  move_overlay(orig:number, orig_face:Facing, mps:number, mech:Mech) : MoveOverlay {
+  move_overlay_for_mech(mech:Mech, speed:string) : MoveOverlay {
+    const orig = mech.hex;
+    const orig_face = mech.facing;
+    const mode = (speed === 'walk') ? 0 : (speed === 'run') ? 1 : 2;
+    const mps = (mode === 0) ? mech.mps_walk : mech.mps_run;
     const board = this.board;
     const olay:OlayHex[] = [];
 
@@ -252,7 +270,7 @@ export class GameState {
     }
 
     step(orig,orig,orig_face,mps);
-    return {mode:1, hexes:olay}
+    return {mode, hexes:olay}
   }
 
 

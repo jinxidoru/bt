@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
 import './index.css';
-import {BtMain} from './bt/main';
+import {App} from './bt/main';
 import reportWebVitals from './reportWebVitals';
 
 // reset the local storage state
@@ -13,7 +13,7 @@ if (window.location.search.indexOf('reset') !== -1) {
 } else {
   ReactDOM.render(
     <React.StrictMode>
-      <BtMain />
+      <App />
     </React.StrictMode>,
     document.getElementById('root')
   );

@@ -1,9 +1,10 @@
-import {useRef,MouseEvent} from 'react'
+import {useRef,useContext,useMemo,useState,MouseEvent} from 'react'
 import react from 'react'
 import {useAnimate,useWindowEvent} from './react-utils'
 import {point} from './btutil'
 import {HEX_W, HEX_H, HEX_DX} from './const'
 import {GameState} from './game'
+import {GlobalContext} from './main'
 
 
 const SCALE_MAX = 5;
@@ -33,7 +34,18 @@ function with_rotation(ctx:any, x:number, y:number, a:number, fn:any) {
 
 export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
   const canvasRef = useRef<any>()
+  const [freeze,setFreeze] = useState(false);
   const {view,board} = game;
+  const {curMech:[curMech,setCurMech], speed:[speed]} = useContext(GlobalContext);
+  view.redraw = true;
+
+  // ---- various flags, etc
+  // get the movement overlay
+  const moveOverlay = useMemo(() => {
+    game.view.path = null;
+    setFreeze(false);
+    return curMech && game.move_overlay_for_mech(curMech,speed);
+  }, [curMech,speed,game]);
 
   // redraw after resize
   useWindowEvent('resize', () => { view.redraw = true; });
@@ -298,14 +310,14 @@ export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
 
 
     function drawMoveOverlay() {
-      if (!view.move_overlay)  return;
+      if (!moveOverlay)  return;
 
       // set the fill style
       const styles = ['rgba(255,255,255,.7)','rgba(0,0,0,.4)']
-      ctx.fillStyle = styles[view.move_overlay.mode];
+      ctx.fillStyle = styles[moveOverlay.mode];
 
       // draw each hex
-      const hexes = view.move_overlay.hexes;
+      const hexes = moveOverlay.hexes;
       for (let i=0; i<hexes.length; i++) {
         if (hexes[i]) {
           let pt = view.center_idx(i);
@@ -339,11 +351,11 @@ export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
       view.redraw = true;
 
     // pathing
-    } else if (view.path) {
+    } else if (moveOverlay && !freeze) {
       const [vx,vy] = to_view_xy(e);
       const hex = view.hex_from_view_xy(vx, vy);
       const facing = view.facing_from_view_xy(hex, vx, vy);
-      game.path_update(hex, facing);
+      game.path_update(hex, facing, moveOverlay);
     }
   }
 
@@ -370,10 +382,47 @@ export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
     view.redraw = true;
   }
 
+  function onContextMenu(ev:MouseEvent) {
+    setCurMech(null);
+    ev.preventDefault();
+  }
+
+  function onClick(ev:MouseEvent) {
+    const [vx,vy] = to_view_xy(ev);
+    const hex = view.hex_from_view_xy(vx, vy);
+    const facing = view.facing_from_view_xy(hex, vx, vy);
+
+    // unfreeze a path
+    if (freeze) {
+      setFreeze(false);
+      if (moveOverlay) {
+        game.path_update(hex, facing, moveOverlay);
+      }
+      return;
+    }
+
+    // select a mech
+    let mech = game.mechs.find(m => (m.hex === hex));
+    if (mech && mech !== curMech) {
+      setCurMech(mech);
+      return;
+    }
+
+    // freeze a path
+    if (view.path) {
+      if (view.path.hexes[view.path.hexes.length-1] === hex) {
+        setFreeze(true);
+        return;
+      }
+    }
+  }
+
   return (<div className="bt-center">
     <canvas width="800" height="800" ref={canvasRef}
       onMouseMove={onMouseMove} onMouseDown={onMouseDown}
       onMouseUp={stopDrag} onMouseLeave={stopDrag}
-      onWheel={onWheel} />
+      onWheel={onWheel} onContextMenu={onContextMenu}
+      onClick={onClick}
+      />
   </div>);
 }
