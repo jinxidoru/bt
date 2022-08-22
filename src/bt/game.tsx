@@ -13,7 +13,9 @@ const HEX_H2 = HEX_H / 2;
 const SQRT_3 = Math.sqrt(3);
 
 
-type Facing = 0 | 1 | 2 | 3 | 4 | 5;
+// --- types
+export type Facing = 0 | 1 | 2 | 3 | 4 | 5;
+export type Mech = ReturnType<typeof new_mech>
 
 
 class Path {
@@ -54,7 +56,8 @@ export class MapView {
   oy = 0        // top-left corner Y
 
   // ui state
-  drag_prev : Point|null = null;
+  drag_prev: Point|null = null;
+  moveOverlay: MoveOverlay|null = null;
 
   // debug
   paused = false;
@@ -129,23 +132,22 @@ export class MapView {
 };
 
 
-let mechNextId = 1;
-
-export class Mech {
-  id: number;
-  name: string;
-  image: any;
-  facing:Facing = 1;
-  mps_walk = 6;
-  mps_run = 9;
-
-  constructor(public hex:number, img_url:string, public team:number) {
-    this.id = mechNextId++;
-    this.name = img_url;
-    load_mech_image(img_url, TEAM_COLORS[team]).then(img => {
-      this.image = img;
-    });
+export function new_mech(hex:number, img_url:string, team:number) {
+  const mech = {
+    id: -1,
+    name: img_url,
+    image: null as any,
+    facing: 1 as Facing,
+    mps_walk: 6,
+    mps_run: 9,
+    hex, team,
   }
+
+  load_mech_image(img_url, TEAM_COLORS[team]).then(img => {
+    mech.image = img;
+  });
+
+  return mech;
 }
 
 
@@ -158,13 +160,14 @@ export class GameState {
     window_any.game = this;
     window_any.view = this;
 
-    this.mechs.push(new Mech(0,'Daimyo',0));
-    this.mechs.push(new Mech(16,'Wolverine',1));
-    this.mechs.push(new Mech(50,'ZeusX_X3',2));
-    this.mechs.push(new Mech(97,'jabberwocky_65a',2));
-    this.mechs.push(new Mech(51,'jabberwocky_65a',1));
+    this.mechs.push(new_mech(0,'Daimyo',0));
+    this.mechs.push(new_mech(16,'Wolverine',1));
+    this.mechs.push(new_mech(50,'ZeusX_X3',2));
+    this.mechs.push(new_mech(97,'jabberwocky_65a',2));
+    this.mechs.push(new_mech(51,'jabberwocky_65a',1));
 
     for (var i=0; i<this.mechs.length; i++) {
+      this.mechs[i].id = i;
       this.mechs[i].facing = (i%6) as Facing;
     }
   }

@@ -1,5 +1,4 @@
 import {useRef,useEffect} from 'react'
-import React from 'react'
 
 
 export function useAnimate(fn:any) {
@@ -23,12 +22,5 @@ export function useWindowEvent(name:string, fn:any) {
     return () => { window.removeEventListener(name, fn); };
   });
 }
-
-
-export function createContext<T>() {
-  return React.createContext(null) as any as React.Context<T>;
-}
-
-export type ContextProp<T> = [T,(k:T) => void]
 
 
