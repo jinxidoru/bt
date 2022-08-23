@@ -3,7 +3,7 @@ import react from 'react'
 import {useAnimate,useWindowEvent,useDirty} from './react-utils'
 import {point,Images} from './btutil'
 import {HEX_W, HEX_H, HEX_DX} from './const'
-import {GameState,Mech} from './game'
+import {GameState,Mech,PathStep} from './game'
 
 
 const SCALE_MAX = 5;
@@ -49,7 +49,6 @@ export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
   // get the movement overlay
   const moveOverlay = view.moveOverlay = useMemo(() => {
     game.view.path = null;
-    //setFreeze(false);
     return curMech && game.move_overlay_for_mech(curMech,speed);
   }, [curMech,speed,game]);
 
@@ -138,12 +137,9 @@ export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
     }
 
     // stage a path
-    if (view.path) {
-      if (view.path.hexes[view.path.hexes.length-1] === hex) {
-        const path = [...view.path.hexes, view.path.facing]
-        game.move_stage(path);
-        return;
-      }
+    if (view.path && view.path.end.hex === hex) {
+      game.move_stage([view.path.end.hex, view.path.end.facing]);
+      return;
     }
   }
 
@@ -376,6 +372,10 @@ function renderCanvas(tm:number, game:GameState, canvas:any) {
     }
   }
 
+  function optional<T>(o:T) : T|undefined {
+    return o;
+  }
+
 
   function drawPath() {
     if (!view.path)  return;
@@ -387,15 +387,20 @@ function renderCanvas(tm:number, game:GameState, canvas:any) {
     const c1 = (mode===0) ? 'white' : (mode===1) ? 'black' : (mode===2) ? 'red' : 'yellow';
     const c2 = (mode===0 || mode===3) ? 'black' : 'white';
 
-    // other stuff
-    const rotate_only = (path.hexes.length === 1);
+    // eliminate the rotations from the steps
+    const steps:PathStep[] = []
+    for (let step = optional(path.end); step; step = step.prev) {
+      if (step.prev && step.prev.hex === step.hex)  continue;
+      steps.push(step);
+    }
+    steps[0] = path.end;
 
     // draw the lines
     ctx.strokeStyle = c1;
     ctx.lineWidth = 6;
     ctx.beginPath();
-    for (let i=0; i<path.hexes.length; i++) {
-      let {x,y} = view.center_idx(path.hexes[i]);
+    for (let step of steps) {
+      let {x,y} = view.center_idx(step.hex);
       ctx.lineTo(x,y);
     }
     ctx.stroke();
@@ -405,8 +410,8 @@ function renderCanvas(tm:number, game:GameState, canvas:any) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.font = '8pt impact';
-    for (let i=(rotate_only?0:1); i<path.hexes.length; i++) {
-      let {x,y} = view.center_idx(path.hexes[i]);
+    for (let step of steps) {
+      let {x,y} = view.center_idx(step.hex);
       ctx.beginPath();
       ctx.arc(x, y, 9, 0, TAU);
       ctx.fillStyle = c2;
@@ -414,11 +419,11 @@ function renderCanvas(tm:number, game:GameState, canvas:any) {
       ctx.stroke();
 
       ctx.fillStyle = c1;
-      ctx.fillText(path.mps[i] || 0, x, y);
+      ctx.fillText(step.mps || 0, x, y);
 
-      if (i === (path.hexes.length-1)) {
+      if (step === path.end) {
         ctx.beginPath();
-        ctx.arc(x, y, 16, (path.facing-2) * (Math.PI/3), (path.facing-1) * (Math.PI/3));
+        ctx.arc(x, y, 16, (step.facing-2) * (Math.PI/3), (step.facing-1) * (Math.PI/3));
         ctx.stroke();
       }
     }
@@ -426,7 +431,7 @@ function renderCanvas(tm:number, game:GameState, canvas:any) {
     ctx.restore();
 
     // draw the mech again so that it's on top
-    if (!rotate_only) {
+    if (steps.length !== 1) {
       const mech = game.mechs[game.move.selected_mech];
       if (mech)  drawMech(mech);
     }
@@ -443,7 +448,7 @@ function renderCanvas(tm:number, game:GameState, canvas:any) {
     // draw each hex
     const hexes = moveOverlay.hexes;
     for (let i=0; i<hexes.length; i++) {
-      if (hexes[i]) {
+      if (hexes[i] && i !== moveOverlay.mech.hex) {
         let pt = view.center_idx(i);
         ctx.beginPath();
         ctx.arc(pt.x, pt.y, 7, 0, TAU);

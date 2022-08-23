@@ -16,29 +16,28 @@ type Speed = 'walk' | 'run';
 
 
 
-class Path {
-  mode: 0|1|2|3 = 0;   // walk, run, jump, sprint
-  hexes: number[] = [50];
-  mps: number[] = [0];
-  facing: Facing = 2;
-  mp_total = 5;
+export interface PathStep {
+  hex: number;
+  mps: number;
+  facing: Facing;
+  prev?: PathStep;
 }
-
 
 interface MoveOverlay {
+  mech: Mech;
   mode: 0|1|2|3
-  hexes: OlayHex[]
+  hexes: PathStep[][];
 }
 
-interface OlayHex {
-  faces: OlayStep[]
+interface Path {
+  mode: 0|1|2|3
+  end: PathStep
 }
 
-interface OlayStep {
-  mps: number;
-  from: number;
-  face: Facing;
+function facing_rotate(f:Facing, dir:number) {
+  return ((f+dir+6) % 6) as Facing;
 }
+
 
 
 
@@ -223,90 +222,80 @@ export class GameState {
     const view = this.view;
 
     // check for ignorable
-    if (view.path) {
-      const path = view.path;
-      if (path.facing === facing && path.hexes[path.hexes.length-1] === dst)
-        return;
+    if (view.path && view.path.end.hex === dst && view.path.end.facing === facing) {
+      return;
     }
 
-    // create a new path
-    const path = view.path = new Path();
+    // init
     view.redraw = true;
+    view.path = null;
 
-    // get the movement overlay
-    path.hexes = [];
-    path.mps = [];
-    if (!moveOverlay.hexes[dst]) return;
-    const overlay = moveOverlay.hexes;
-    path.mode = moveOverlay.mode;
-
-    // find workable facing
-    if (!overlay[dst].faces[facing]) {
-      const nfacing = [facing+1,facing+5,facing+2,facing+4,facing+3]
-        .map(x => (x%6)).find(f => (overlay[dst].faces[f]));
-      if (nfacing === undefined)  return;
-      facing = nfacing as Facing;
-    }
-    path.facing = facing;
-
-    // follow the path
-    let hex = dst;
-    while (true) {
-      const next = overlay[hex].faces[facing];
-      path.hexes.unshift(hex);
-      if (hex === dst) {
-        path.mps.unshift(next.mps);
-      } else {
-        path.mps.unshift(overlay[hex].faces[next.face].mps);
+    // create the closest facing
+    const odst = moveOverlay.hexes[dst];
+    if (odst) for (let df of [0,1,-1,2,-2,3]) {
+      var xface = facing_rotate(facing,df);
+      if (odst[xface]) {
+        view.path = {mode:moveOverlay.mode, end:odst[xface]};
+        return;
       }
-      if (next.from === hex)  break;
-      hex = next.from;
-      facing = next.face;
     }
-
   }
 
 
   // --- overlay
-  move_overlay_for_mech(mech:Mech, speed:string) : MoveOverlay {
-    const orig = mech.hex;
-    const orig_face = mech.facing;
+  move_overlay_for_mech(mech:Mech, speed:Speed) : MoveOverlay {
     const mode = (speed === 'walk') ? 0 : (speed === 'run') ? 1 : 2;
+    const olay:MoveOverlay = { mech, mode, hexes:[] };
     const mps = (mode === 0) ? mech.mps_walk : mech.mps_run;
+    const hexes = olay.hexes;
     const board = this.board;
-    const olay:OlayHex[] = [];
 
-    const step = (hex:number, from:number, face:Facing, mps:number) => {
-      if (hex !== from)  mps -= board.move_cost(from,hex);
-      if (mps < 0)  return;
-      if (this.is_obstructed(hex,mech.team))  return;
+    // create the start location
+    visit(mps, mech.hex, mech.facing);
 
-      // initialize
-      let cur = olay[hex];
-      if (!cur) {
-        cur = olay[hex] = {faces:[]};
-      }
+    function visit(mps:number, hex:number, facing:Facing, prev?:PathStep) {
+      const olay_hex = hexes[hex] || (hexes[hex] = []);
+      if (!olay_hex[facing] || (mps > olay_hex[facing].mps)) {
+        const cur = olay_hex[facing] = {mps,hex,facing,prev};
 
-      // populate each face
-      for (var i=0; i<6; i++) {
-        let xface = ((face+i) % 6) as Facing;
-        let xmps = mps - ((i>3) ? (6-i) : i);
-        if (xmps >= 0) {
-          if (!cur.faces[xface] || cur.faces[xface].mps < xmps) {
-            cur.faces[xface] = { mps:xmps, from:from, face:face };
-            if (xmps > 0) {
-              let next_hex = board.hex_by_facing(hex, xface);
-              if (next_hex !== -1) {
-                step(next_hex, hex, xface, xmps);
-              }
+        // rotation first
+        if (mps >= 1) {
+          visit(mps-1, hex, facing_rotate(facing,-1), cur);
+          visit(mps-1, hex, facing_rotate(facing,+1), cur);
+          if (mps >= 2) {
+            visit(mps-2, hex, facing_rotate(facing,-2), cur);
+            visit(mps-2, hex, facing_rotate(facing,+2), cur);
+            if (mps >= 3) {
+              visit(mps-3, hex, facing_rotate(facing,3), cur);
+            }
+          }
+        }
+
+        // movement: forward
+        if (mps > 0) {
+          const next_hex = board.hex_by_facing(hex,facing);
+          if (next_hex !== -1) {
+            const xmps = mps - board.move_cost(hex,next_hex);
+            if (xmps >= 0) {
+              visit(xmps, next_hex, facing, cur);
+            }
+          }
+        }
+
+        // movement: reverse
+        if (mps > 0 && mode === 0) {
+          const next_hex = board.hex_by_facing(hex,facing_rotate(facing,3));
+          if (next_hex !== -1) {
+            const xmps = mps - board.move_cost(hex,next_hex);
+            if (xmps >= 0) {
+              visit(xmps, next_hex, facing, cur);
             }
           }
         }
       }
     }
 
-    step(orig,orig,orig_face,mps);
-    return {mode, hexes:olay}
+    return olay;
   }
 
 
