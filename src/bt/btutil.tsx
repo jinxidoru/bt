@@ -1,4 +1,12 @@
 import {PATH_MECH_IMGS,PATH_HEX_IMGS} from './const'
+import {MapView} from './game'
+
+
+const TEAM_COLORS:[number,number,number][] = [
+  [0,96,255],     // blue
+  [238,75,43],    // red
+  [0xff,0xb3,0],  // orange
+];
 
 
 export const window_any:any = window;
@@ -18,7 +26,9 @@ export interface Dict<T> {
 
 
 //! Load an image and then apply the given color.
-export async function load_mech_image(name:string, color:[number,number,number]) {
+export async function load_mech_image(name:string, team:number) {
+  const color = TEAM_COLORS[team];
+
   return new Promise((resolve) => {
     var img = new Image();
     img.onload = () => {
@@ -48,6 +58,87 @@ export async function load_mech_image(name:string, color:[number,number,number])
     img.src = `${PATH_MECH_IMGS}/${name}.png`
   });
 }
+
+
+type ImageEntry = {
+  image: Image;
+  promise: Promise<Image>;
+}
+
+
+export const Images = (() => {
+  const images : Dict<ImageEntry> = {};
+  let view : MapView|null = null;
+
+
+  // ---- functions
+  function load_mech(name:string, team:number) {
+    const color = TEAM_COLORS[team];
+
+    // choose a key
+    const key = `img:${name}:${team}`
+    if (images[key])  return key;
+
+    // create the entry
+    const entry = images[key] = {
+      image: new Image(),
+      promise: new Promise(resolve => {
+        var img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx:any = canvas.getContext('2d');
+
+          // get the image data
+          ctx.drawImage(img, 0, 0);
+          const ximg = ctx.getImageData(0, 0, img.width, img.height);
+          for (var i=0; i<ximg.data.length; i+=4) {
+            if (ximg.data[i+3] === 255) {
+              var n = (ximg.data[i]/255);
+              ximg.data[i] = n * color[0];
+              ximg.data[i+1] = n * color[1];
+              ximg.data[i+2] = n * color[2];
+            }
+          }
+
+          // extract the image back out
+          ctx.putImageData(ximg, 0, 0);
+          var nimg = new Image();
+          nimg.src = canvas.toDataURL();
+          resolve(nimg);
+          entry.image = nimg;
+
+          if (view) {
+            view.redraw = true;
+          }
+        };
+        img.src = `${PATH_MECH_IMGS}/${name}.png`
+      })
+    };
+
+    return key;
+  }
+
+  function get(key:string) {
+    if (images[key]) {
+      return images[key].image;
+    } else {
+      return new Image();
+    }
+  }
+
+  function set_view(view_:MapView) {
+    view = view_;
+  }
+
+  return {load_mech,get,set_view};
+})();
+
+
+
+
+
 
 
 export type Image = HTMLImageElement

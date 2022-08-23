@@ -2,7 +2,7 @@ import {useState,useEffect} from 'react'
 import React from 'react'
 import "./main.scss"
 import {Board} from './board'
-import {GameState,Mech} from './game'
+import {GameState,Mech,new_mech} from './game'
 import {BtCanvas} from './canvas'
 import {Provider,useDispatch} from 'react-redux'
 import {store,useSelector, ACTION} from './store'
@@ -22,14 +22,24 @@ export function App() {
 
 export function BtMain() {
   const [game,setGame] = useState<GameState|null>(null);
+  const dispatch = useDispatch();
 
   useEffect(() => {
     Board.load('grasslands_2').then(board => {
       const game = new GameState();
       game.set_board(board);
       setGame(game);
+
+      dispatch(ACTION.initialize([[
+        new_mech(88,'Daimyo',0),
+        new_mech(56,'Wolverine',0),
+        new_mech(121,'ZeusX_X3',1),
+        new_mech(134,'jabberwocky_65a',1),
+        new_mech(38,'jabberwocky_65a',0),
+      ]]));
+
     });
-  }, []);
+  }, [dispatch]);
 
   if (game) {
     return (<div className="bt-root">
@@ -44,12 +54,12 @@ export function BtMain() {
 
 
 const BtSidebar : FC<{game:GameState}> = ({game}) => {
-
+  const mechs = useSelector(state => state.game.mechs);
 
   return (<div className="bt-sidebar">
     <BtControls />
     <div className="mech-list">
-      {game.mechs.map((mech,k) => (<BtMechCard key={k} mech={mech} />))}
+      {mechs.map((mech,k) => (<BtMechCard key={k} mech={mech} />))}
     </div>
   </div>)
 };
@@ -79,7 +89,7 @@ const BtControls : FC<{}> = () => {
 
   function submit() {
     if (is_staged) {
-      dispatch(ACTION.move_select(-1));
+      dispatch(ACTION.move_commit());
     }
   }
 

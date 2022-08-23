@@ -1,12 +1,6 @@
-import {window_any,Point,point,load_mech_image} from './btutil'
+import {window_any,Point,point,Images} from './btutil'
 import {Board} from './board'
 import {HEX_H,HEX_W} from './const'
-
-const TEAM_COLORS:[number,number,number][] = [
-  [0,96,255],     // blue
-  [238,75,43],    // red
-  [0xff,0xb3,0],  // orange
-];
 
 const HEX_W4 = HEX_W / 4;
 const HEX_H2 = HEX_H / 2;
@@ -58,6 +52,7 @@ export class MapView {
   // ui state
   drag_prev: Point|null = null;
   moveOverlay: MoveOverlay|null = null;
+  mechs: Mech[] = [];
 
   // debug
   paused = false;
@@ -136,16 +131,12 @@ export function new_mech(hex:number, img_url:string, team:number) {
   const mech = {
     id: -1,
     name: img_url,
-    image: null as any,
+    imgkey: Images.load_mech(img_url,team),
     facing: 1 as Facing,
     mps_walk: 6,
     mps_run: 9,
     hex, team,
   }
-
-  load_mech_image(img_url, TEAM_COLORS[team]).then(img => {
-    mech.image = img;
-  });
 
   return mech;
 }
@@ -153,23 +144,11 @@ export function new_mech(hex:number, img_url:string, team:number) {
 
 export class GameState {
   view = new MapView();
-  mechs:Mech[] = [];
   board = Board.empty();
 
   constructor() {
     window_any.game = this;
     window_any.view = this;
-
-    this.mechs.push(new_mech(0,'Daimyo',0));
-    this.mechs.push(new_mech(16,'Wolverine',1));
-    this.mechs.push(new_mech(50,'ZeusX_X3',2));
-    this.mechs.push(new_mech(97,'jabberwocky_65a',2));
-    this.mechs.push(new_mech(51,'jabberwocky_65a',1));
-
-    for (var i=0; i<this.mechs.length; i++) {
-      this.mechs[i].id = i;
-      this.mechs[i].facing = (i%6) as Facing;
-    }
   }
 
   set_board(board:Board) {
@@ -179,9 +158,6 @@ export class GameState {
   }
 
 
-  get_mech_by_id(id:number) {
-    return this.mechs.find(m => (m.id === id));
-  }
 
 
 
@@ -280,7 +256,7 @@ export class GameState {
   is_obstructed(hex:number, team:number = -1) {
 
     // check for a mech
-    for (let mech of this.mechs) {
+    for (let mech of this.view.mechs) {
       if ((mech.team !== team) && (mech.hex === hex)) {
         return true;
       }

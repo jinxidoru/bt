@@ -1,7 +1,7 @@
 import {useRef,useMemo,MouseEvent} from 'react'
 import react from 'react'
 import {useAnimate,useWindowEvent} from './react-utils'
-import {point} from './btutil'
+import {point,Images} from './btutil'
 import {HEX_W, HEX_H, HEX_DX} from './const'
 import {GameState,MapView} from './game'
 import {useSelector, ACTION} from './store'
@@ -41,9 +41,11 @@ export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
   const speed = useSelector(state => state.game.move.speed);
   const is_staged = useSelector(state => state.game.move.staged.length > 0);
   const mech_id = useSelector(state => state.game.move.selected_mech);
-  const curMech = (mech_id>=0) ? game.mechs[mech_id] : null;
+  const mechs = useSelector(state => state.game.mechs);
+  const curMech = (mech_id>=0) ? mechs[mech_id] : null;
 
   view.redraw = true;
+  view.mechs = mechs;
 
 
   // ---- various flags, etc
@@ -132,7 +134,7 @@ export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
     }
 
     // select a mech
-    let mech = game.mechs.find(m => (m.hex === hex));
+    let mech = mechs.find(m => (m.hex === hex));
     if (mech && mech !== curMech) {
       dispatch(ACTION.move_select(mech.id));
       return;
@@ -141,7 +143,8 @@ export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
     // stage a path
     if (view.path) {
       if (view.path.hexes[view.path.hexes.length-1] === hex) {
-        dispatch(ACTION.move_stage([1]));
+        const path = [...view.path.hexes, view.path.facing]
+        dispatch(ACTION.move_stage(path));
         return;
       }
     }
@@ -254,16 +257,16 @@ function renderCanvas(tm:number, view:MapView, game:GameState, canvas:any) {
 
 
   function drawMechs() {
-    for (const mech of game.mechs) {
-      if (mech.image && mech.hex >= 0) {
+    for (const mech of view.mechs) {
+      if (mech.hex >= 0) {
         const px = view.center_idx(mech.hex);
-        const img = mech.image;
+        const img = Images.get(mech.imgkey);
         const ir = HEX_W * (5/6);
         with_rotation(ctx, px.x, px.y, mech.facing * (TAU/6), () => {
           const is = Math.min(ir/img.width, ir/img.height);
           const dw = is * img.width;
           const dh = is * img.height;
-          ctx.drawImage(mech.image, px.x - dw/2, px.y - dh/2, dw, dh);
+          ctx.drawImage(img, px.x - dw/2, px.y - dh/2, dw, dh);
         })
       }
     }
