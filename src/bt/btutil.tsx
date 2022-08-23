@@ -1,5 +1,5 @@
 import {PATH_MECH_IMGS,PATH_HEX_IMGS} from './const'
-import {MapView} from './game'
+import {GameState} from './game'
 
 
 const TEAM_COLORS:[number,number,number][] = [
@@ -68,7 +68,7 @@ type ImageEntry = {
 
 export const Images = (() => {
   const images : Dict<ImageEntry> = {};
-  let view : MapView|null = null;
+  let game : GameState|null = null;
 
 
   // ---- functions
@@ -109,8 +109,8 @@ export const Images = (() => {
           resolve(nimg);
           entry.image = nimg;
 
-          if (view) {
-            view.redraw = true;
+          if (game) {
+            game.dirty.mark();
           }
         };
         img.src = `${PATH_MECH_IMGS}/${name}.png`
@@ -128,11 +128,11 @@ export const Images = (() => {
     }
   }
 
-  function set_view(view_:MapView) {
-    view = view_;
+  function set_game(game_:GameState) {
+    game = game_;
   }
 
-  return {load_mech,get,set_view};
+  return {load_mech,get,set_game};
 })();
 
 

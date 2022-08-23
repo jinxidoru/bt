@@ -4,8 +4,7 @@ import "./main.scss"
 import {Board} from './board'
 import {GameState,Mech,new_mech} from './game'
 import {BtCanvas} from './canvas'
-import {Provider,useDispatch} from 'react-redux'
-import {store,useSelector, ACTION} from './store'
+import {useDirty} from './react-utils'
 
 
 type FC<T> = React.FC<T>
@@ -13,16 +12,13 @@ type FC<T> = React.FC<T>
 
 export function App() {
   return (
-    <Provider store={store}>
-      <BtMain />
-    </Provider>
+    <BtMain />
   )
 }
 
 
 export function BtMain() {
   const [game,setGame] = useState<GameState|null>(null);
-  const dispatch = useDispatch();
 
   useEffect(() => {
     Board.load('grasslands_2').then(board => {
@@ -30,16 +26,16 @@ export function BtMain() {
       game.set_board(board);
       setGame(game);
 
-      dispatch(ACTION.initialize([[
+      game.set_mechs([
         new_mech(88,'Daimyo',0),
         new_mech(56,'Wolverine',0),
         new_mech(121,'ZeusX_X3',1),
         new_mech(134,'jabberwocky_65a',1),
         new_mech(38,'jabberwocky_65a',0),
-      ]]));
+      ]);
 
     });
-  }, [dispatch]);
+  }, []);
 
   if (game) {
     return (<div className="bt-root">
@@ -54,21 +50,19 @@ export function BtMain() {
 
 
 const BtSidebar : FC<{game:GameState}> = ({game}) => {
-  const mechs = useSelector(state => state.game.mechs);
+  useDirty(game);
 
   return (<div className="bt-sidebar">
-    <BtControls />
+    <BtControls game={game} />
     <div className="mech-list">
-      {mechs.map((mech,k) => (<BtMechCard key={k} mech={mech} />))}
+      {game.mechs.map(mech => (<BtMechCard key={mech.id} mech={mech} game={game} />))}
     </div>
   </div>)
 };
 
 
-const BtMechCard : FC<{mech:Mech}> = ({mech}) => {
-  const dispatch = useDispatch();
-
-  const onClick = () => dispatch(ACTION.move_select(mech.id));
+const BtMechCard : FC<{mech:Mech,game:GameState}> = ({mech,game}) => {
+  const onClick = () => game.move_select(mech.id);
 
   return (<div className={`mech-card team${mech.team}`} onClick={onClick}>
     <div className="heat" />
@@ -82,22 +76,21 @@ const BtMechCard : FC<{mech:Mech}> = ({mech}) => {
 };
 
 
-const BtControls : FC<{}> = () => {
-  const move = useSelector(state => state.game.move);
-  const is_staged = useSelector(state => state.game.move.staged.length > 0);
-  const dispatch = useDispatch();
+const BtControls : FC<{game:GameState}> = ({game}) => {
+  useDirty(game);
+  const is_staged = game.move.staged.length > 0;
 
   function submit() {
     if (is_staged) {
-      dispatch(ACTION.move_commit());
+      game.move_commit();
     }
   }
 
   return (<div className="bt-controls">
     Phase: Movement<br/>
-    {(move.selected_mech === -1) ? ("Select a mech to move") : (<>
-      <button onClick={() => dispatch(ACTION.move_speed('walk'))}>Walk</button>
-      <button onClick={() => dispatch(ACTION.move_speed('run'))}>Run</button>
+    {(game.move.selected_mech === -1) ? ("Select a mech to move") : (<>
+      <button onClick={() => game.move_speed('walk')}>Walk</button>
+      <button onClick={() => game.move_speed('run')}>Run</button>
       {is_staged && (<button onClick={submit}>Commit</button>)}
     </>)}
   </div>);

@@ -1,11 +1,9 @@
 import {useRef,useMemo,MouseEvent} from 'react'
 import react from 'react'
-import {useAnimate,useWindowEvent} from './react-utils'
+import {useAnimate,useWindowEvent,useDirty} from './react-utils'
 import {point,Images} from './btutil'
 import {HEX_W, HEX_H, HEX_DX} from './const'
-import {GameState,MapView} from './game'
-import {useSelector, ACTION} from './store'
-import {useDispatch} from 'react-redux'
+import {GameState} from './game'
 
 
 const SCALE_MAX = 5;
@@ -36,16 +34,15 @@ function with_rotation(ctx:any, x:number, y:number, a:number, fn:any) {
 export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
   const canvasRef = useRef<any>()
   const {view} = game;
-  const dispatch = useDispatch();
+  useDirty(game);
 
-  const speed = useSelector(state => state.game.move.speed);
-  const is_staged = useSelector(state => state.game.move.staged.length > 0);
-  const mech_id = useSelector(state => state.game.move.selected_mech);
-  const mechs = useSelector(state => state.game.mechs);
+  const speed = game.move.speed;
+  const is_staged = game.move.staged.length > 0;
+  const mech_id = game.move.selected_mech;
+  const mechs = game.mechs;
   const curMech = (mech_id>=0) ? mechs[mech_id] : null;
 
   view.redraw = true;
-  view.mechs = mechs;
 
 
   // ---- various flags, etc
@@ -60,7 +57,7 @@ export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
   useWindowEvent('resize', () => { view.redraw = true; });
 
   useAnimate((tm:number) => {
-    renderCanvas(tm, view, game, canvasRef.current);
+    renderCanvas(tm, game, canvasRef.current);
   });
 
 
@@ -115,7 +112,7 @@ export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
   }
 
   function onContextMenu(ev:MouseEvent) {
-    dispatch(ACTION.move_select(-1));
+    game.move_select(-1);
     ev.preventDefault();
   }
 
@@ -126,7 +123,7 @@ export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
 
     // unstage the path
     if (is_staged) {
-      dispatch(ACTION.move_stage([]));
+      game.move_stage([]);
       if (moveOverlay) {
         game.path_update(hex, facing, moveOverlay);
       }
@@ -136,7 +133,7 @@ export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
     // select a mech
     let mech = mechs.find(m => (m.hex === hex));
     if (mech && mech !== curMech) {
-      dispatch(ACTION.move_select(mech.id));
+      game.move_select(mech.id);
       return;
     }
 
@@ -144,7 +141,7 @@ export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
     if (view.path) {
       if (view.path.hexes[view.path.hexes.length-1] === hex) {
         const path = [...view.path.hexes, view.path.facing]
-        dispatch(ACTION.move_stage(path));
+        game.move_stage(path);
         return;
       }
     }
@@ -162,7 +159,8 @@ export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
 
 
 
-function renderCanvas(tm:number, view:MapView, game:GameState, canvas:any) {
+function renderCanvas(tm:number, game:GameState, canvas:any) {
+  const {view} = game;
   const {moveOverlay,board} = view;
 
   // setup the metrics display
@@ -257,7 +255,7 @@ function renderCanvas(tm:number, view:MapView, game:GameState, canvas:any) {
 
 
   function drawMechs() {
-    for (const mech of view.mechs) {
+    for (const mech of game.mechs) {
       if (mech.hex >= 0) {
         const px = view.center_idx(mech.hex);
         const img = Images.get(mech.imgkey);

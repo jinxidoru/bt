@@ -1,6 +1,7 @@
 import {window_any,Point,point,Images} from './btutil'
 import {Board} from './board'
 import {HEX_H,HEX_W} from './const'
+import {createDirty} from './react-utils'
 
 const HEX_W4 = HEX_W / 4;
 const HEX_H2 = HEX_H / 2;
@@ -10,6 +11,9 @@ const SQRT_3 = Math.sqrt(3);
 // --- types
 export type Facing = 0 | 1 | 2 | 3 | 4 | 5;
 export type Mech = ReturnType<typeof new_mech>
+type Phase = 'move' | 'attack';
+type Speed = 'walk' | 'run';
+
 
 
 class Path {
@@ -52,7 +56,6 @@ export class MapView {
   // ui state
   drag_prev: Point|null = null;
   moveOverlay: MoveOverlay|null = null;
-  mechs: Mech[] = [];
 
   // debug
   paused = false;
@@ -145,10 +148,12 @@ export function new_mech(hex:number, img_url:string, team:number) {
 export class GameState {
   view = new MapView();
   board = Board.empty();
+  dirty = createDirty();
+  mechs:Mech[] = [];
 
   constructor() {
     window_any.game = this;
-    window_any.view = this;
+    Images.set_game(this);
   }
 
   set_board(board:Board) {
@@ -158,7 +163,59 @@ export class GameState {
   }
 
 
+  // movement
+  move = {
+    speed: 'walk' as Speed,
+    selected_mech: -1,
+    staged: [] as number[]
+  }
 
+
+  // ---- actions
+  private move_action() {
+    this.dirty.mark();
+    return this.move;
+  }
+
+  set_mechs(mechs:Mech[]) {
+    this.dirty.mark();
+    this.mechs = mechs;
+    this.mechs.forEach((m,n) => m.id = n);
+  }
+
+  move_select(sel:number) {
+    const move = this.move_action();
+    move.selected_mech = sel;
+    move.staged = [];
+  }
+
+  move_speed(speed:Speed) {
+    const move = this.move_action();
+    if (move.speed !== speed) {
+      move.speed = speed;
+      move.staged = [];
+    }
+  }
+
+  move_stage(path:number[]) {
+    const move = this.move_action();
+    if (move.selected_mech >= 0) {
+      move.staged = path;
+    }
+  }
+
+  move_commit() {
+    const move = this.move_action();
+    if (move.staged.length > 1) {
+      const mech = this.mechs[move.selected_mech];
+      const staged = move.staged;
+
+      mech.hex = staged[staged.length-2];
+      mech.facing = staged[staged.length-1] as Facing;
+      move.selected_mech = -1;
+      move.staged = [];
+    }
+  }
 
 
   // ---- pathing
@@ -256,7 +313,7 @@ export class GameState {
   is_obstructed(hex:number, team:number = -1) {
 
     // check for a mech
-    for (let mech of this.view.mechs) {
+    for (let mech of this.mechs) {
       if ((mech.team !== team) && (mech.hex === hex)) {
         return true;
       }
