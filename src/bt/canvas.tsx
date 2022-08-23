@@ -3,7 +3,7 @@ import react from 'react'
 import {useAnimate,useWindowEvent,useDirty} from './react-utils'
 import {point,Images} from './btutil'
 import {HEX_W, HEX_H, HEX_DX} from './const'
-import {GameState} from './game'
+import {GameState,Mech} from './game'
 
 
 const SCALE_MAX = 5;
@@ -254,19 +254,24 @@ function renderCanvas(tm:number, game:GameState, canvas:any) {
   }
 
 
+  function drawMech(mech:Mech) {
+    if (mech.hex >= 0) {
+      const px = view.center_idx(mech.hex);
+      const img = Images.get(mech.imgkey);
+      const ir = HEX_W * (5/6);
+      with_rotation(ctx, px.x, px.y, mech.facing * (TAU/6), () => {
+        const is = Math.min(ir/img.width, ir/img.height);
+        const dw = is * img.width;
+        const dh = is * img.height;
+        ctx.drawImage(img, px.x - dw/2, px.y - dh/2, dw, dh);
+      })
+    }
+  }
+
+
   function drawMechs() {
     for (const mech of game.mechs) {
-      if (mech.hex >= 0) {
-        const px = view.center_idx(mech.hex);
-        const img = Images.get(mech.imgkey);
-        const ir = HEX_W * (5/6);
-        with_rotation(ctx, px.x, px.y, mech.facing * (TAU/6), () => {
-          const is = Math.min(ir/img.width, ir/img.height);
-          const dw = is * img.width;
-          const dh = is * img.height;
-          ctx.drawImage(img, px.x - dw/2, px.y - dh/2, dw, dh);
-        })
-      }
+      drawMech(mech);
     }
   }
 
@@ -382,6 +387,9 @@ function renderCanvas(tm:number, game:GameState, canvas:any) {
     const c1 = (mode===0) ? 'white' : (mode===1) ? 'black' : (mode===2) ? 'red' : 'yellow';
     const c2 = (mode===0 || mode===3) ? 'black' : 'white';
 
+    // other stuff
+    const rotate_only = (path.hexes.length === 1);
+
     // draw the lines
     ctx.strokeStyle = c1;
     ctx.lineWidth = 6;
@@ -397,7 +405,7 @@ function renderCanvas(tm:number, game:GameState, canvas:any) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.font = '8pt impact';
-    for (let i=0; i<path.hexes.length; i++) {
+    for (let i=(rotate_only?0:1); i<path.hexes.length; i++) {
       let {x,y} = view.center_idx(path.hexes[i]);
       ctx.beginPath();
       ctx.arc(x, y, 9, 0, TAU);
@@ -416,6 +424,12 @@ function renderCanvas(tm:number, game:GameState, canvas:any) {
     }
 
     ctx.restore();
+
+    // draw the mech again so that it's on top
+    if (!rotate_only) {
+      const mech = game.mechs[game.move.selected_mech];
+      if (mech)  drawMech(mech);
+    }
   }
 
 
