@@ -39,8 +39,6 @@ function facing_rotate(f:Facing, dir:number) {
 }
 
 
-
-
 export class MapView {
 
   // draw settings
@@ -55,15 +53,14 @@ export class MapView {
   // ui state
   drag_prev: Point|null = null;
   moveOverlay: MoveOverlay|null = null;
+  path: Path|null = null;
+  path_waypoint: Path|null = null;
 
   // debug
   paused = false;
   fps = false;
   fps_tms : number[] = [];
   show_hex_number = true;
-
-  // movement
-  path: Path|null = null;
 
   board = Board.empty();
 
@@ -166,7 +163,7 @@ export class GameState {
   move = {
     speed: 'walk' as Speed,
     selected_mech: -1,
-    staged: [] as number[]
+    staged: null as Path|null,
   }
 
 
@@ -185,35 +182,75 @@ export class GameState {
   move_select(sel:number) {
     const move = this.move_action();
     move.selected_mech = sel;
-    move.staged = [];
+    this.move.staged = null;
+    this.update_move_overlay();
   }
 
   move_speed(speed:Speed) {
     const move = this.move_action();
+    const view = this.view;
+
     if (move.speed !== speed) {
       move.speed = speed;
-      move.staged = [];
+      const staged = move.staged;
+      move.staged = null;
+      view.path = null;
+      this.update_move_overlay();
     }
   }
 
-  move_stage(path:number[]) {
+  move_stage(hex:number) {
     const move = this.move_action();
-    if (move.selected_mech >= 0) {
-      move.staged = path;
+    const view = this.view;
+
+    // limit down to the given hex
+    let path = view?.path?.end;
+    while (path && path.hex !== hex) {
+      path = path.prev;
     }
+
+    // set the stage
+    if (move.selected_mech >= 0 && path && view.path) {
+      view.path.end = path;
+      move.staged = view.path;
+    } else {
+      move.staged = null;
+    }
+    this.update_move_overlay();
   }
 
   move_commit() {
     const move = this.move_action();
-    if (move.staged.length > 1) {
+    if (move.staged) {
       const mech = this.mechs[move.selected_mech];
-      const staged = move.staged;
+      const end = move.staged.end;
+      this.clear_move();
 
-      mech.hex = staged[staged.length-2];
-      mech.facing = staged[staged.length-1] as Facing;
-      move.selected_mech = -1;
-      move.staged = [];
+      // move the mech
+      mech.hex = end.hex;
+      mech.facing = end.facing;
     }
+  }
+
+
+
+  // ---- utilities
+  active_mech() : Mech|null {
+    const mid = this.move.selected_mech;
+    if (mid >= 0 && mid < this.mechs.length) {
+      return this.mechs[mid];
+    } else {
+      this.move.selected_mech = -1;
+      return null;
+    }
+  }
+
+  clear_move() {
+    const {move,view} = this;
+    move.staged = null;
+    move.selected_mech = -1;
+    view.moveOverlay = null;
+    view.path = null;
   }
 
 
@@ -222,13 +259,14 @@ export class GameState {
     const view = this.view;
 
     // check for ignorable
-    if (view.path && view.path.end.hex === dst && view.path.end.facing === facing) {
+    const path_end = view?.path?.end;
+    if (path_end && path_end.hex === dst && path_end.facing === facing) {
       return;
     }
 
     // init
     view.redraw = true;
-    view.path = null;
+    view.path = this.move.staged;
 
     // create the closest facing
     const odst = moveOverlay.hexes[dst];
@@ -243,53 +281,90 @@ export class GameState {
 
 
   // --- overlay
-  move_overlay_for_mech(mech:Mech, speed:Speed) : MoveOverlay {
+  update_move_overlay() {
+    const mech = this.active_mech();
+    const move = this.move;
+
+    if (!mech) {
+      this.view.moveOverlay = null;
+    } else if (move.staged) {
+      this.view.moveOverlay = this.move_overlay_for_mech(mech, move.speed, move.staged.end);
+    } else {
+      this.view.moveOverlay = this.move_overlay_for_mech(mech, move.speed);
+    }
+  }
+
+
+  move_overlay_for_mech(mech:Mech, speed:Speed, waypoint?:PathStep) : MoveOverlay {
     const mode = (speed === 'walk') ? 0 : (speed === 'run') ? 1 : 2;
     const olay:MoveOverlay = { mech, mode, hexes:[] };
     const mps = (mode === 0) ? mech.mps_walk : mech.mps_run;
     const hexes = olay.hexes;
     const board = this.board;
+    const blocked:boolean[] = [];
 
     // create the start location
-    visit(mps, mech.hex, mech.facing);
+    if (waypoint) {
+
+      //
+      while (waypoint.prev && waypoint.prev.hex === waypoint.hex)
+        waypoint = waypoint.prev;
+      for (let p=waypoint; p.prev; (p=p.prev)) {
+        blocked[p.hex] = true;
+      }
+
+      // setup this point
+      hexes[waypoint.hex] = [];
+      hexes[waypoint.hex][waypoint.facing] = waypoint;
+      visit_at(waypoint);
+
+    } else {
+      visit(mps, mech.hex, mech.facing);
+    }
 
     function visit(mps:number, hex:number, facing:Facing, prev?:PathStep) {
+      if (blocked[hex] && (!prev || prev.hex !== hex))  return;
       const olay_hex = hexes[hex] || (hexes[hex] = []);
       if (!olay_hex[facing] || (mps > olay_hex[facing].mps)) {
-        const cur = olay_hex[facing] = {mps,hex,facing,prev};
+        const step = olay_hex[facing] = {mps,hex,facing,prev};
+        visit_at(step);
+      }
+    }
 
-        // rotation first
-        if (mps >= 1) {
-          visit(mps-1, hex, facing_rotate(facing,-1), cur);
-          visit(mps-1, hex, facing_rotate(facing,+1), cur);
-          if (mps >= 2) {
-            visit(mps-2, hex, facing_rotate(facing,-2), cur);
-            visit(mps-2, hex, facing_rotate(facing,+2), cur);
-            if (mps >= 3) {
-              visit(mps-3, hex, facing_rotate(facing,3), cur);
-            }
+    function visit_at(step:PathStep) {
+      const {mps,facing,hex} = step;
+
+      // rotation first
+      if (mps >= 1) {
+        visit(mps-1, hex, facing_rotate(facing,-1), step);
+        visit(mps-1, hex, facing_rotate(facing,+1), step);
+        if (mps >= 2) {
+          visit(mps-2, hex, facing_rotate(facing,-2), step);
+          visit(mps-2, hex, facing_rotate(facing,+2), step);
+          if (mps >= 3) {
+            visit(mps-3, hex, facing_rotate(facing,3), step);
           }
         }
+      }
 
-        // movement: forward
-        if (mps > 0) {
-          const next_hex = board.hex_by_facing(hex,facing);
-          if (next_hex !== -1) {
-            const xmps = mps - board.move_cost(hex,next_hex);
-            if (xmps >= 0) {
-              visit(xmps, next_hex, facing, cur);
-            }
+      // movement: forward
+      if (mps > 0) {
+        const next_hex = board.hex_by_facing(hex,facing);
+        if (next_hex !== -1) {
+          const xmps = mps - board.move_cost(hex,next_hex);
+          if (xmps >= 0) {
+            visit(xmps, next_hex, facing, step);
           }
         }
+      }
 
-        // movement: reverse
-        if (mps > 0 && mode === 0) {
-          const next_hex = board.hex_by_facing(hex,facing_rotate(facing,3));
-          if (next_hex !== -1) {
-            const xmps = mps - board.move_cost(hex,next_hex);
-            if (xmps >= 0) {
-              visit(xmps, next_hex, facing, cur);
-            }
+      // movement: reverse
+      if (mps > 0 && mode === 0) {
+        const next_hex = board.hex_by_facing(hex,facing_rotate(facing,3));
+        if (next_hex !== -1) {
+          const xmps = mps - board.move_cost(hex,next_hex);
+          if (xmps >= 0) {
+            visit(xmps, next_hex, facing, step);
           }
         }
       }

@@ -78,7 +78,7 @@ const BtMechCard : FC<{mech:Mech,game:GameState}> = ({mech,game}) => {
 
 const BtControls : FC<{game:GameState}> = ({game}) => {
   useDirty(game);
-  const is_staged = game.move.staged.length > 0;
+  const is_staged = !!game.move.staged;
 
   function submit() {
     if (is_staged) {

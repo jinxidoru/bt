@@ -1,4 +1,4 @@
-import {useRef,useMemo,MouseEvent} from 'react'
+import {useRef,MouseEvent} from 'react'
 import react from 'react'
 import {useAnimate,useWindowEvent,useDirty} from './react-utils'
 import {point,Images} from './btutil'
@@ -36,28 +36,16 @@ export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
   const {view} = game;
   useDirty(game);
 
-  const speed = game.move.speed;
-  const is_staged = game.move.staged.length > 0;
-  const mech_id = game.move.selected_mech;
+  const is_staged = game.move.staged !== null;
   const mechs = game.mechs;
-  const curMech = (mech_id>=0) ? mechs[mech_id] : null;
-
+  const curMech = game.active_mech();
+  const moveOverlay = view.moveOverlay;
   view.redraw = true;
 
 
   // ---- various flags, etc
-  // get the movement overlay
-  const moveOverlay = view.moveOverlay = useMemo(() => {
-    game.view.path = null;
-    return curMech && game.move_overlay_for_mech(curMech,speed);
-  }, [curMech,speed,game]);
-
-  // redraw after resize
   useWindowEvent('resize', () => { view.redraw = true; });
-
-  useAnimate((tm:number) => {
-    renderCanvas(tm, game, canvasRef.current);
-  });
+  useAnimate((tm:number) => renderCanvas(tm, game, canvasRef.current));
 
 
   // --- view movement
@@ -79,7 +67,7 @@ export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
       view.redraw = true;
 
     // pathing
-    } else if (moveOverlay && !is_staged) {
+    } else if (moveOverlay) {
       const [vx,vy] = to_view_xy(e);
       const hex = view.hex_from_view_xy(vx, vy);
       const facing = view.facing_from_view_xy(hex, vx, vy);
@@ -118,14 +106,11 @@ export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
   function onClick(ev:MouseEvent) {
     const [vx,vy] = to_view_xy(ev);
     const hex = view.hex_from_view_xy(vx, vy);
-    const facing = view.facing_from_view_xy(hex, vx, vy);
+    //const facing = view.facing_from_view_xy(hex, vx, vy);
 
-    // unstage the path
-    if (is_staged) {
-      game.move_stage([]);
-      if (moveOverlay) {
-        game.path_update(hex, facing, moveOverlay);
-      }
+    // stage a path
+    if (view.path) {
+      game.move_stage(hex);
       return;
     }
 
@@ -133,12 +118,6 @@ export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
     let mech = mechs.find(m => (m.hex === hex));
     if (mech && mech !== curMech) {
       game.move_select(mech.id);
-      return;
-    }
-
-    // stage a path
-    if (view.path && view.path.end.hex === hex) {
-      game.move_stage([view.path.end.hex, view.path.end.facing]);
       return;
     }
   }
@@ -405,6 +384,12 @@ function renderCanvas(tm:number, game:GameState, canvas:any) {
     }
     ctx.stroke();
 
+    // only show the first circle in the case where the path is a rotate only path
+    const is_rotate_only = (steps.length === 1);
+    if (!is_rotate_only) {
+      steps.pop();
+    }
+
     // draw the circles
     ctx.lineWidth = 3;
     ctx.textAlign = 'center';
@@ -431,7 +416,7 @@ function renderCanvas(tm:number, game:GameState, canvas:any) {
     ctx.restore();
 
     // draw the mech again so that it's on top
-    if (steps.length !== 1) {
+    if (!is_rotate_only) {
       const mech = game.mechs[game.move.selected_mech];
       if (mech)  drawMech(mech);
     }
