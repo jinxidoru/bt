@@ -26,13 +26,17 @@ export function BtMain() {
       game.set_board(board);
       setGame(game);
 
-      game.set_mechs([
-        new_mech(88,'Daimyo',0),
-        new_mech(56,'Wolverine',0),
-        new_mech(121,'ZeusX_X3',1),
-        new_mech(134,'jabberwocky_65a',1),
-        new_mech(38,'jabberwocky_65a',0),
-      ]);
+
+      game.mimir.push({
+        type: "init",
+        mechs: [
+          new_mech(88,'Daimyo',0),
+          new_mech(56,'Wolverine',0),
+          new_mech(121,'ZeusX_X3',1),
+          new_mech(134,'jabberwocky_65a',1),
+          new_mech(38,'jabberwocky_65a',0),
+        ]
+      });
 
     });
   }, []);
@@ -50,15 +54,28 @@ export function BtMain() {
 
 
 const BtSidebar : FC<{game:GameState}> = ({game}) => {
+  const {mechs} = game.mimir;
   useDirty(game);
 
   return (<div className="bt-sidebar">
+    <BtOverview game={game} />
     <BtControls game={game} />
     <div className="mech-list">
-      {game.mechs.map(mech => (<BtMechCard key={mech.id} mech={mech} game={game} />))}
+      {mechs.map(mech => (<BtMechCard key={mech.id} mech={mech} game={game} />))}
     </div>
   </div>)
 };
+
+
+const BtOverview : FC<{game:GameState}> = ({game}) => {
+  const {overview} = game.mimir;
+  useDirty(game);
+
+  return (<div className="bt-overview">
+    <b>Phase</b> {overview.phase}
+    <b> | Turn</b> {overview.turn}
+  </div>)
+}
 
 
 const BtMechCard : FC<{mech:Mech,game:GameState}> = ({mech,game}) => {

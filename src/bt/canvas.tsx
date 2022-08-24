@@ -37,7 +37,7 @@ export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
   useDirty(game);
 
   const is_staged = game.move.staged !== null;
-  const mechs = game.mechs;
+  const {mechs} = game.mimir;
   const curMech = game.active_mech();
   const moveOverlay = view.moveOverlay;
   view.redraw = true;
@@ -104,6 +104,7 @@ export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
   }
 
   function onClick(ev:MouseEvent) {
+    ev.preventDefault();
     const [vx,vy] = to_view_xy(ev);
     const hex = view.hex_from_view_xy(vx, vy);
     //const facing = view.facing_from_view_xy(hex, vx, vy);
@@ -122,12 +123,19 @@ export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
     }
   }
 
+  function onDoubleClick(ev:MouseEvent) {
+    ev.preventDefault();
+    if (game.move.staged) {
+      game.move_commit();
+    }
+  }
+
   return (<div className="bt-center">
     <canvas width="800" height="800" ref={canvasRef}
       onMouseMove={onMouseMove} onMouseDown={onMouseDown}
       onMouseUp={stopDrag} onMouseLeave={stopDrag}
       onWheel={onWheel} onContextMenu={onContextMenu}
-      onClick={onClick}
+      onClick={onClick} onDoubleClick={onDoubleClick}
       />
   </div>);
 }
@@ -136,6 +144,7 @@ export const BtCanvas : React.FC<{game:GameState}> = ({game}) => {
 
 function renderCanvas(tm:number, game:GameState, canvas:any) {
   const {view} = game;
+  const {mechs} = game.mimir;
   const {moveOverlay,board} = view;
 
   // setup the metrics display
@@ -245,7 +254,7 @@ function renderCanvas(tm:number, game:GameState, canvas:any) {
 
 
   function drawMechs() {
-    for (const mech of game.mechs) {
+    for (const mech of mechs) {
       drawMech(mech);
     }
   }
@@ -417,7 +426,7 @@ function renderCanvas(tm:number, game:GameState, canvas:any) {
 
     // draw the mech again so that it's on top
     if (!is_rotate_only) {
-      const mech = game.mechs[game.move.selected_mech];
+      const mech = game.active_mech();
       if (mech)  drawMech(mech);
     }
   }

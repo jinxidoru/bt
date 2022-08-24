@@ -2,6 +2,7 @@ import {window_any,Point,point,Images} from './btutil'
 import {Board} from './board'
 import {HEX_H,HEX_W} from './const'
 import {createDirty} from './react-utils'
+import {Mimir,Mech,Facing} from './mimir'
 
 const HEX_W4 = HEX_W / 4;
 const HEX_H2 = HEX_H / 2;
@@ -9,10 +10,14 @@ const SQRT_3 = Math.sqrt(3);
 
 
 // --- types
-export type Facing = 0 | 1 | 2 | 3 | 4 | 5;
-export type Mech = ReturnType<typeof new_mech>
 type Phase = 'move' | 'attack';
 type Speed = 'walk' | 'run';
+
+
+
+// ---- passthroughs
+export const {new_mech} = Mimir;
+export type { Mech, Facing };
 
 
 
@@ -126,29 +131,16 @@ export class MapView {
 };
 
 
-export function new_mech(hex:number, img_url:string, team:number) {
-  const mech = {
-    id: -1,
-    name: img_url,
-    facing: 1 as Facing,
-    mps_walk: 6,
-    mps_run: 9,
-    hex, team,
-  }
-
-  return mech;
-}
-
-
 export class GameState {
   view = new MapView();
   board = Board.empty();
   dirty = createDirty();
-  mechs:Mech[] = [];
+  mimir = new Mimir();
 
   constructor() {
     window_any.game = this;
     Images.set_game(this);
+    this.mimir.on_action(() => this.dirty.mark());
   }
 
   set_board(board:Board) {
@@ -172,15 +164,17 @@ export class GameState {
     return this.move;
   }
 
-  set_mechs(mechs:Mech[]) {
-    this.dirty.mark();
-    this.mechs = mechs;
-    this.mechs.forEach((m,n) => m.id = n);
-  }
-
   move_select(sel:number) {
+
+    // check if the mech is eligible to be selected
+    const mech = (sel>=0) && this.mimir.mechs.at(sel);
+    if (mech && mech.moved) {
+      return;
+    }
+
+    // perform the move
     const move = this.move_action();
-    move.selected_mech = sel;
+    move.selected_mech = mech ? mech.id : -1;
     this.move.staged = null;
     this.update_move_overlay();
   }
@@ -220,14 +214,29 @@ export class GameState {
 
   move_commit() {
     const move = this.move_action();
-    if (move.staged) {
-      const mech = this.mechs[move.selected_mech];
-      const end = move.staged.end;
-      this.clear_move();
+    const mech = this.active_mech();
 
-      // move the mech
-      mech.hex = end.hex;
-      mech.facing = end.facing;
+    if (move.staged && mech) {
+
+      // create the path
+      const path:[number,Facing][] = [];
+      for (let p = move.staged.end;; ) {
+        path.unshift([p.hex,p.facing]);
+        if (p.prev) {
+          p = p.prev;
+        } else {
+          break;
+        }
+      }
+
+      this.mimir.push({
+        type: "move",
+        mech_id: mech.id,
+        speed: move.speed === 'walk' ? 0 : 1,
+        path: path
+      });
+
+      this.clear_move();
     }
   }
 
@@ -236,8 +245,10 @@ export class GameState {
   // ---- utilities
   active_mech() : Mech|null {
     const mid = this.move.selected_mech;
-    if (mid >= 0 && mid < this.mechs.length) {
-      return this.mechs[mid];
+    const {mechs} = this.mimir;
+
+    if (mid >= 0 && mid < mechs.length) {
+      return mechs[mid];
     } else {
       this.move.selected_mech = -1;
       return null;
@@ -370,19 +381,6 @@ export class GameState {
     }
 
     return olay;
-  }
-
-
-  is_obstructed(hex:number, team:number = -1) {
-
-    // check for a mech
-    for (let mech of this.mechs) {
-      if ((mech.team !== team) && (mech.hex === hex)) {
-        return true;
-      }
-    }
-
-    return false;
   }
 
 };
