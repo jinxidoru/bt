@@ -130,7 +130,6 @@ export function new_mech(hex:number, img_url:string, team:number) {
   const mech = {
     id: -1,
     name: img_url,
-    imgkey: Images.load_mech(img_url,team),
     facing: 1 as Facing,
     mps_walk: 6,
     mps_run: 9,

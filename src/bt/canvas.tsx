@@ -232,7 +232,7 @@ function renderCanvas(tm:number, game:GameState, canvas:any) {
   function drawMech(mech:Mech) {
     if (mech.hex >= 0) {
       const px = view.center_idx(mech.hex);
-      const img = Images.get(mech.imgkey);
+      const img = Images.for_mech(mech);
       const ir = HEX_W * (5/6);
       with_rotation(ctx, px.x, px.y, mech.facing * (TAU/6), () => {
         const is = Math.min(ir/img.width, ir/img.height);
